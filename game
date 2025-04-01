@@ -1,0 +1,217 @@
+#####################################################################
+#
+# CSCB58 Winter 2025 Assembly Final Project
+# University of Toronto, Scarborough
+#
+# Student: Yaseen Sadat, 1010358596, sadatyas, yaseen.sadat@mail.utoronto.ca
+#
+# Bitmap Display Configuration:
+# - Unit width in pixels: 4
+# - Unit height in pixels: 4
+# - Display width in pixels: 256
+# - Display height in pixels: 256
+# - Base Address for Display: 0x10008000 ($gp)
+#
+# Which milestones have been reached in this submission?
+# - Milestone 1
+#
+# Which approved features have been implemented for milestone 3?
+# 1. (None yet – coming soon!)
+#
+# Link to video demonstration for final submission:
+# - (Coming soon!)
+#
+# Are you OK with us sharing the video with people outside course staff?
+# - yes
+#
+# Any additional information that the TA needs to know:
+# - Step-by-step build in progress
+#
+#####################################################################
+
+.eqv BASE_ADDRESS 0x10008000
+
+.data
+player_row: .word 60     # Y-position (row)
+player_col: .word 2      # X-position (column)
+
+.text
+main:
+    ################################################################
+    # Store color constants in saved registers so they are not 
+    # overwritten by keyboard input. 
+    ################################################################
+    li $s0, BASE_ADDRESS        # Framebuffer base address
+    li $s1, 0x00808080          # Platform color (grey)
+    li $s2, 0x00FF0000          # Player color (intended red)
+    li $s3, 0x00000000          # Background color (black)
+
+    ################################################################
+    # Draw static platforms
+    ################################################################
+    li $t4, 63      # floor row
+    li $t5, 0
+floor_loop:
+    mul $t6, $t4, 512           # row * 512
+    mul $t7, $t5, 4             # col * 4
+    add $t8, $s0, $t6           # base + row offset
+    add $t8, $t8, $t7           # + col offset
+    sw $s1, 0($t8)              # store platform color
+    addi $t5, $t5, 1
+    blt $t5, 128, floor_loop
+
+    # Another platform
+    li $t4, 40
+    li $t5, 20
+plat1_loop:
+    mul $t6, $t4, 512
+    mul $t7, $t5, 4
+    add $t8, $s0, $t6
+    add $t8, $t8, $t7
+    sw $s1, 0($t8)
+    addi $t5, $t5, 1
+    blt $t5, 41, plat1_loop
+
+    # Another platform
+    li $t4, 30
+    li $t5, 70
+plat2_loop:
+    mul $t6, $t4, 512
+    mul $t7, $t5, 4
+    add $t8, $s0, $t6
+    add $t8, $t8, $t7
+    sw $s1, 0($t8)
+    addi $t5, $t5, 1
+    blt $t5, 101, plat2_loop
+
+    ################################################################
+    # Initialize "previous" position
+    ################################################################
+    li $s6, 60    # prev_row
+    li $s7, 2     # prev_col
+
+######################################################################
+# MAIN GAME LOOP
+######################################################################
+game_loop:
+    ################################################################
+    # 1) Keyboard Input
+    #    Use temporary registers for I/O so we don't overwrite colors
+    ################################################################
+    li  $t0, 0xffff0000       # MMIO status address
+    lw  $t1, 0($t0)           # check if key was pressed (1 = yes)
+    bne $t1, 1, no_input
+
+    lw  $t2, 4($t0)           # get ASCII code of key
+
+    # 'a' = 97
+    li $t3, 97
+    beq $t2, $t3, move_left
+
+    # 'd' = 100
+    li $t3, 100
+    beq $t2, $t3, move_right
+
+    # 'w' = 119
+    li $t3, 119
+    beq $t2, $t3, try_jump
+
+no_input:
+
+    ################################################################
+    # 2) Erase old player from previous position 
+    #    using $s6 (prev_row) and $s7 (prev_col)
+    ################################################################
+    li $t8, 0
+erase_loop_rows:
+    li $t9, 0
+erase_loop_cols:
+    # row = s6 + t8
+    # col = s7 + t9
+    # address = s0 + ((row*512) + col)*4
+    add $t4, $s6, $t8          # old row
+    add $t5, $s7, $t9          # old col
+    mul $t6, $t4, 512
+    mul $t7, $t5, 4
+    add $t7, $t7, $t6
+    add $t7, $s0, $t7
+    sw $s3, 0($t7)             # store background color
+
+    addi $t9, $t9, 1
+    blt $t9, 3, erase_loop_cols
+    addi $t8, $t8, 1
+    blt $t8, 3, erase_loop_rows
+
+    ################################################################
+    # 3) Update current player position from memory
+    ################################################################
+    la  $t0, player_row
+    la  $t1, player_col
+    lw  $t4, 0($t0)            # current row
+    lw  $t5, 0($t1)            # current col
+
+    ################################################################
+    # 4) Draw player at new position (3x3)
+    ################################################################
+    li $t8, 0
+draw_loop_rows:
+    li $t9, 0
+draw_loop_cols:
+    add $t6, $t4, $t8          # row
+    add $t7, $t5, $t9          # col
+    mul $t6, $t6, 512          # row * 512
+    mul $t7, $t7, 4            # col * 4
+    add $t6, $t6, $t7
+    add $t6, $s0, $t6          # base + offset
+    sw $s2, 0($t6)             # store player color (red)
+
+    addi $t9, $t9, 1
+    blt $t9, 3, draw_loop_cols
+    addi $t8, $t8, 1
+    blt $t8, 3, draw_loop_rows
+
+    ################################################################
+    # 5) Store new position as "previous" for next iteration
+    ################################################################
+    move $s6, $t4
+    move $s7, $t5
+
+    ################################################################
+    # 6) Small frame delay
+    ################################################################
+    li $v0, 32
+    li $a0, 40
+    syscall
+
+    ################################################################
+    # 7) Jump back to main game loop
+    ################################################################
+    j game_loop
+
+######################################################################
+# MOVEMENT HANDLING
+######################################################################
+move_left:
+    lw $t4, player_col
+    blez $t4, done_moving
+    addi $t4, $t4, -1
+    sw $t4, player_col
+done_moving:
+    j game_loop
+
+move_right:
+    lw $t4, player_col
+    li $t5, 125
+    bge $t4, $t5, done_moving2
+    addi $t4, $t4, 1
+    sw $t4, player_col
+done_moving2:
+    j game_loop
+
+try_jump:
+    # Placeholder for jumping
+    j game_loop
+
+# Prevent falling off bottom: infinite loop at end of program
+end:
+    j end
