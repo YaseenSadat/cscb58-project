@@ -8,280 +8,407 @@
 # Bitmap Display Configuration:
 # - Unit width in pixels: 4
 # - Unit height in pixels: 4
-# - Display width in pixels: 256
+# - Display width in pixels: 512
 # - Display height in pixels: 256
 # - Base Address for Display: 0x10008000 ($gp)
 #
-# Which milestones have been reached in this submission?
+# Milestones reached:
 # - Milestone 1
 #
-# Which approved features have been implemented for milestone 3?
+# Approved features for Milestone 3:
 # 1. (None yet – coming soon!)
 #
-# Link to video demonstration for final submission:
-# - (Coming soon!)
-#
-# Are you OK with us sharing the video with people outside course staff?
-# - yes
-#
-# Any additional information that the TA needs to know:
+# Additional information:
 # - Step-by-step build in progress
 #
 #####################################################################
 
-.eqv BASE_ADDRESS 0x10008000    # Framebuffer base address in memory
+.eqv BASE_ADDRESS 0x10008000    # Framebuffer base address
 
 .data
-# Stores the player's vertical and horizontal positions
-player_row: .word 60            # Y-position (row)
-player_col: .word 2             # X-position (column)
+# Player position and physics variables
+player_row:      .word 60        # Y-position (row)
+player_col:      .word 2         # X-position (column)
+player_velocity: .word 0         # Y velocity (positive = falling, negative = jumping up)
+is_jumping:      .word 0         # 1 if in the air, 0 if grounded
 
-# Jumping physics variables
-player_velocity: .word 0        # Y velocity (positive = falling, negative = jumping up)
-is_jumping: .word 0             # 1 if in the air (jumping or falling), 0 if grounded
+# Buffer to store the 3×3 background region under the player (9 words = 36 bytes)
+player_bg_buffer: .space 36
+
+# Temporary storage for the current player's base position
+current_player_row: .word 0
+current_player_col: .word 0
+
+# Constant for spaceship color (Green)
+sp_color: .word 0x0000FF00          # Green color for spaceship
 
 .text
 main:
     ################################################################
     # INITIALIZE CONSTANTS
-    # s0 = framebuffer base, s1 = platform color, s2 = player color,
-    # s3 = background color
+    # $s0 = framebuffer base, $s1 = platform color, $s2 = player color,
+    # $s3 = a default background color (dark blue)
     ################################################################
-    li $s0, BASE_ADDRESS        # Base address of the display
-    li $s1, 0x00808080          # Grey color for platforms
-    li $s2, 0x00FF0000          # Red color for player
-    li $s3, 0x00000000          # Black for background/erasing
+    li   $s0, BASE_ADDRESS        # Framebuffer base address
+    li   $s1, 0x00808080          # Grey color for platforms
+    li   $s2, 0x00FF0000          # Red color for player
+
+    # Background & object colors:
+    li   $s4, 0x00000080          # Dark Blue (space background)
+    li   $s5, 0x00FFFFFF          # White (stars)
+    li   $s6, 0x00FFD700          # Yellow (sun)
+    li   $s7, 0x00FF69B4          # Pink (planet)
+    # Spaceship color is now stored in memory (sp_color)
+
+    move $s3, $s4                # Default background color (dark blue)
 
     ################################################################
-    # DRAW STATIC PLATFORMS (floor + 2 floating)
+    # INITIAL DRAWING OF THE BACKGROUND
+    # (Draw over 64 rows × 128 columns; row offset = row*512, col offset = col*4)
     ################################################################
-    li $t4, 63                  # Floor row
-    li $t5, 0
+    li   $t4, 0                 # row = 0
+bg_row_loop:
+    li   $t5, 0                 # col = 0
+bg_col_loop:
+    mul  $t6, $t4, 512          # row offset: 512 bytes per row
+    mul  $t7, $t5, 4            # column offset: 4 bytes per unit
+    add  $t8, $s0, $t6          # base address + row offset
+    add  $t8, $t8, $t7          # + column offset
+    sw   $s4, 0($t8)            # set pixel to dark blue
+
+    # Draw white star if ((row+col)&0x000F == 0)
+    add  $t3, $t4, $t5          # reuse $t3 temporarily for sum
+    andi $t3, $t3, 0x000F
+    beqz $t3, draw_star_bg
+    j    bg_next
+draw_star_bg:
+    sw   $s5, 0($t8)            # white star
+bg_next:
+    addi $t5, $t5, 1
+    blt  $t5, 128, bg_col_loop
+    addi $t4, $t4, 1
+    blt  $t4, 64, bg_row_loop
+
+    ################################################################
+    # DRAW STATIC OBJECTS: PLANET, SUN, SPACESHIP, AND PLATFORMS
+    ################################################################
+    # Pink planet at (row=10, col=100)
+    li   $t4, 10
+    li   $t5, 100
+    mul  $t6, $t4, 512
+    mul  $t7, $t5, 4
+    add  $t8, $s0, $t6
+    add  $t8, $t8, $t7
+    sw   $s7, 0($t8)
+
+    # Sun at (row=5, col=10)
+    li   $t4, 5
+    li   $t5, 10
+    mul  $t6, $t4, 512
+    mul  $t7, $t5, 4
+    add  $t8, $s0, $t6
+    add  $t8, $t8, $t7
+    sw   $s6, 0($t8)
+
+    # Spaceship (3 units wide) at (row=25, col=50)
+    li   $t4, 25
+    li   $t5, 50
+    # Load spaceship color from memory into $t3
+    lw   $t3, sp_color
+    li   $t9, 0                # loop counter for spaceship width
+ship_loop:
+    mul  $t6, $t4, 512
+    mul  $t7, $t5, 4
+    add  $t8, $s0, $t6
+    add  $t8, $t8, $t7
+    sw   $t3, 0($t8)           # draw spaceship pixel with green color
+    addi $t5, $t5, 1
+    addi $t9, $t9, 1
+    blt  $t9, 3, ship_loop
+
+    # Floor: Draw bottom row (row 63) across all 128 columns
+    li   $t4, 63          # Floor row (0-indexed: 0..63)
+    li   $t5, 0
 floor_loop:
-    mul $t6, $t4, 512
-    mul $t7, $t5, 4
-    add $t8, $s0, $t6
-    add $t8, $t8, $t7
-    sw $s1, 0($t8)              # Draw floor pixel
+    mul  $t6, $t4, 512
+    mul  $t7, $t5, 4
+    add  $t8, $s0, $t6
+    add  $t8, $t8, $t7
+    sw   $s1, 0($t8)      # platform pixel (grey)
     addi $t5, $t5, 1
-    blt $t5, 128, floor_loop
+    blt  $t5, 128, floor_loop
 
-    # Platform 1 (row 40, cols 20-40)
-    li $t4, 40
-    li $t5, 20
+    # Platform 1: row 40, columns 20 to 40
+    li   $t4, 40
+    li   $t5, 20
 plat1_loop:
-    mul $t6, $t4, 512
-    mul $t7, $t5, 4
-    add $t8, $s0, $t6
-    add $t8, $t8, $t7
-    sw $s1, 0($t8)
+    mul  $t6, $t4, 512
+    mul  $t7, $t5, 4
+    add  $t8, $s0, $t6
+    add  $t8, $t8, $t7
+    sw   $s1, 0($t8)
     addi $t5, $t5, 1
-    blt $t5, 41, plat1_loop
+    blt  $t5, 41, plat1_loop
 
-    # Platform 2 (row 30, cols 70-100)
-    li $t4, 30
-    li $t5, 70
+    # Platform 2: row 30, columns 70 to 100
+    li   $t4, 30
+    li   $t5, 70
 plat2_loop:
-    mul $t6, $t4, 512
-    mul $t7, $t5, 4
-    add $t8, $s0, $t6
-    add $t8, $t8, $t7
-    sw $s1, 0($t8)
+    mul  $t6, $t4, 512
+    mul  $t7, $t5, 4
+    add  $t8, $s0, $t6
+    add  $t8, $t8, $t7
+    sw   $s1, 0($t8)
     addi $t5, $t5, 1
-    blt $t5, 101, plat2_loop
+    blt  $t5, 101, plat2_loop
 
     ################################################################
-    # INIT previous player position for erase logic
+    # INIT PREVIOUS PLAYER POSITION (for erase/restore)
     ################################################################
-    li $s6, 60    # prev_row
-    li $s7, 2     # prev_col
+    li   $s6, 60        # previous row
+    li   $s7, 2         # previous col
 
 ######################################################################
 # MAIN GAME LOOP
-# Handles input, erases previous player, applies gravity,
-# draws updated position, and waits for next frame
+# Each frame:
+#  (a) Restore the old 3x3 region from the previous player position,
+#  (b) Process input and gravity,
+#  (c) Save the new 3x3 background region into the buffer,
+#  (d) Draw the player, then update the saved position.
 ######################################################################
 game_loop:
-        ################################################################
-    # 1) Handle Continuous Input If a Key Is Held Down
     ################################################################
-    li $t0, 0xffff0000          # MMIO base
-    lw $t1, 0($t0)              # Check if a key is being held (1 = yes)
-    bne $t1, 1, skip_input      # If no key, skip input handling
-
-    lw $t2, 4($t0)              # Get ASCII of the key
-
-    li $t3, 97                  # 'a'
-    beq $t2, $t3, move_left
-
-    li $t3, 100                 # 'd'
-    beq $t2, $t3, move_right
-
-    li $t3, 119                 # 'w'
-    beq $t2, $t3, try_jump
-
+    # 1) Handle Continuous Input
+    ################################################################
+    li   $t0, 0xffff0000      # MMIO base for keyboard
+    lw   $t1, 0($t0)          # key status
+    bne  $t1, 1, skip_input   # if no key, skip input handling
+    lw   $t2, 4($t0)          # get ASCII code
+    li   $t3, 97              # 'a'
+    beq  $t2, $t3, move_left
+    li   $t3, 100             # 'd'
+    beq  $t2, $t3, move_right
+    li   $t3, 119             # 'w'
+    beq  $t2, $t3, try_jump
 skip_input:
 
-
-
-no_input:
     ################################################################
-    # 2) Erase Previous Player Position
+    # 2) Restore Old Player Background from Buffer
+    # Use the saved 3x3 region from the previous frame.
     ################################################################
-    li $t8, 0
-erase_loop_rows:
-    li $t9, 0
-erase_loop_cols:
-    add $t4, $s6, $t8
-    add $t5, $s7, $t9
-    mul $t6, $t4, 512
-    mul $t7, $t5, 4
-    add $t7, $t7, $t6
-    add $t7, $s0, $t7
-    sw $s3, 0($t7)
+    la   $t3, player_bg_buffer   # load address of player_bg_buffer into $t3
+    li   $t8, 0                  # row offset within block (0 to 2)
+restore_bg_loop_rows:
+    li   $t9, 0                  # col offset within block (0 to 2)
+restore_bg_loop_cols:
+    add  $t4, $s6, $t8           # absolute row = previous row + offset
+    add  $t5, $s7, $t9           # absolute col = previous col + offset
+    mul  $t6, $t4, 512           # row offset in bytes
+    mul  $t7, $t5, 4             # col offset in bytes
+    add  $t0, $s0, $t6           # final address base
+    add  $t0, $t0, $t7           # final pixel address
+    lw   $t1, 0($t3)            # load pixel from buffer
+    sw   $t1, 0($t0)            # restore pixel
+    addi $t3, $t3, 4            # advance buffer pointer
     addi $t9, $t9, 1
-    blt $t9, 3, erase_loop_cols
+    blt  $t9, 3, restore_bg_loop_cols
     addi $t8, $t8, 1
-    blt $t8, 3, erase_loop_rows
+    blt  $t8, 3, restore_bg_loop_rows
 
     ################################################################
-    # 3) Apply Gravity (updates row based on jump/fall)
+    # 3) Apply Gravity (update player_row)
     ################################################################
-    jal apply_gravity
+    jal  apply_gravity
 
     ################################################################
-    # 4) Load and Clamp Player Position from Memory
+    # 4) Load & Clamp New Player Position
     ################################################################
-    la $t0, player_row
-    la $t1, player_col
-    lw $t4, 0($t0)            # row
-    lw $t5, 0($t1)            # col
+    la   $t0, player_row
+    la   $t1, player_col
+    lw   $t4, 0($t0)             # new player row
+    lw   $t5, 0($t1)             # new player col
 
-    li $t6, 0
-    blt $t5, $t6, fix_left
-    li $t6, 125
-    bgt $t5, $t6, fix_right
-    j skip_col_clamp
+    # Clamp player row between 0 and 61 (to keep 3x3 sprite fully onscreen)
+    li   $t6, 0
+    blt  $t4, $t6, fix_top
+    li   $t6, 61
+    bgt  $t4, $t6, fix_bottom
+    j    skip_row_clamp
+fix_top:
+    li   $t4, 0
+    sw   $t4, player_row
+    j    skip_row_clamp
+fix_bottom:
+    li   $t4, 61
+    sw   $t4, player_row
+skip_row_clamp:
 
+    # Clamp player col between 0 and 125 (128-3=125)
+    li   $t6, 0
+    blt  $t5, $t6, fix_left
+    li   $t6, 125
+    bgt  $t5, $t6, fix_right
+    j    skip_col_clamp
 fix_left:
-    li $t5, 0
-    sw $t5, 0($t1)
-    j skip_col_clamp
-
+    li   $t5, 0
+    sw   $t5, player_col
+    j    skip_col_clamp
 fix_right:
-    li $t5, 125
-    sw $t5, 0($t1)
-
+    li   $t5, 125
+    sw   $t5, player_col
 skip_col_clamp:
-    lw $t5, 0($t1)            # reload clamped value
+    lw   $t5, 0($t1)             # reload clamped col
+
+    # Save base player position into temporary memory
+    la   $t7, current_player_row
+    sw   $t4, 0($t7)
+    la   $t7, current_player_col
+    sw   $t5, 0($t7)
 
     ################################################################
-    # 5) Draw 3x3 Player Block at New Position
+    # 5) Save New Player Background into Buffer
+    # Copy the 3x3 region from the new player's position.
     ################################################################
-    li $t8, 0
-draw_loop_rows:
-    li $t9, 0
-draw_loop_cols:
-    add $t6, $t4, $t8
-    add $t7, $t5, $t9
-    mul $t6, $t6, 512
-    mul $t7, $t7, 4
-    add $t6, $t6, $t7
-    add $t6, $s0, $t6
-    sw $s2, 0($t6)
+    la   $t3, player_bg_buffer   # reset buffer pointer into $t3
+    li   $t8, 0                  # outer loop: row offset = 0
+save_bg_loop_rows:
+    # Load current base row and col for this outer loop iteration
+    la   $t7, current_player_row
+    lw   $t5, 0($t7)             # $t5 = base row
+    la   $t7, current_player_col
+    lw   $t6, 0($t7)             # $t6 = base col
+    li   $t9, 0                  # inner loop: col offset = 0
+save_bg_loop_cols:
+    add  $t2, $t5, $t8           # computed row = base row + row offset
+    add  $t1, $t6, $t9           # computed col = base col + col offset
+    mul  $t2, $t2, 512           # row offset in bytes
+    mul  $t1, $t1, 4             # col offset in bytes
+    add  $t0, $s0, $t2           # framebuffer base + row offset
+    add  $t0, $t0, $t1           # final pixel address
+    lw   $t4, 0($t0)            # read pixel from framebuffer
+    sw   $t4, 0($t3)            # store pixel into buffer
+    addi $t3, $t3, 4            # advance buffer pointer
     addi $t9, $t9, 1
-    blt $t9, 3, draw_loop_cols
+    blt  $t9, 3, save_bg_loop_cols
     addi $t8, $t8, 1
-    blt $t8, 3, draw_loop_rows
+    blt  $t8, 3, save_bg_loop_rows
 
     ################################################################
-    # 6) Save Current Position as Previous for Next Frame
+    # 6) Draw 3x3 Player Block at New Position
     ################################################################
-    move $s6, $t4
-    move $s7, $t5
+    li   $t8, 0                  # outer loop: row offset = 0
+draw_loop_rows:
+    # Load current base row and col for this outer loop iteration
+    la   $t7, current_player_row
+    lw   $t5, 0($t7)             # $t5 = base row
+    la   $t7, current_player_col
+    lw   $t6, 0($t7)             # $t6 = base col
+    li   $t9, 0                  # inner loop: col offset = 0
+draw_loop_cols:
+    add  $t2, $t5, $t8           # computed row = base row + row offset
+    add  $t1, $t6, $t9           # computed col = base col + col offset
+    mul  $t2, $t2, 512           # row offset in bytes
+    mul  $t1, $t1, 4             # col offset in bytes
+    add  $t0, $s0, $t2           # framebuffer base + row offset
+    add  $t0, $t0, $t1           # final pixel address
+    sw   $s2, 0($t0)            # draw player pixel (red)
+    addi $t9, $t9, 1
+    blt  $t9, 3, draw_loop_cols
+    addi $t8, $t8, 1
+    blt  $t8, 3, draw_loop_rows
 
     ################################################################
-    # 7) Frame Delay
+    # 7) Update Previous Player Position for Next Frame
     ################################################################
-    li $v0, 32
-    li $a0, 40
+    la   $t7, current_player_row
+    lw   $t4, 0($t7)
+    move $s6, $t4              # new row becomes previous row
+    la   $t7, current_player_col
+    lw   $t4, 0($t7)
+    move $s7, $t4              # new col becomes previous col
+
+    ################################################################
+    # 8) Frame Delay
+    ################################################################
+    li   $v0, 32
+    li   $a0, 40
     syscall
 
-    j game_loop
+    j    game_loop
 
 ######################################################################
 # INPUT HANDLERS
 ######################################################################
 move_left:
-    lw $t4, player_col
-    li $t5, 2
-    ble $t4, $t5, done_moving
+    lw   $t4, player_col
+    li   $t5, 2              # do not move left if too near edge
+    ble  $t4, $t5, done_moving
     addi $t4, $t4, -1
-    sw $t4, player_col
+    sw   $t4, player_col
 done_moving:
-    j skip_input
+    j    skip_input
 
 move_right:
-    lw $t4, player_col
-    li $t5, 125
-    bge $t4, $t5, done_moving2
+    lw   $t4, player_col
+    li   $t5, 125           # maximum safe base_col
+    bge  $t4, $t5, done_moving2
     addi $t4, $t4, 1
-    sw $t4, player_col
+    sw   $t4, player_col
 done_moving2:
-    j skip_input
+    j    skip_input
 
 try_jump:
-    la $t0, is_jumping
-    lw $t1, 0($t0)
-    bnez $t1, game_loop         # skip if already jumping/falling
-    li $t1, 1
-    sw $t1, 0($t0)
-    la $t2, player_velocity
-    li $t3, -5                  # jump force (negative Y velocity)
-    sw $t3, 0($t2)
-    j skip_input
+    la   $t0, is_jumping
+    lw   $t1, 0($t0)
+    bnez $t1, game_loop       # skip if already jumping/falling
+    li   $t1, 1
+    sw   $t1, 0($t0)
+    la   $t2, player_velocity
+    li   $t3, -5             # jump force (negative Y velocity)
+    sw   $t3, 0($t2)
+    j    skip_input
 
 ######################################################################
 # GRAVITY & JUMP PHYSICS ENGINE
 ######################################################################
 apply_gravity:
-    la $t0, is_jumping
-    lw $t1, 0($t0)
-    la $t2, player_row
-    lw $t3, 0($t2)
-    la $t4, player_velocity
-    lw $t5, 0($t4)
+    la   $t0, is_jumping
+    lw   $t1, 0($t0)
+    la   $t2, player_row
+    lw   $t3, 0($t2)
+    la   $t4, player_velocity
+    lw   $t5, 0($t4)
     bnez $t1, apply_physics
-    li $t6, 63
-    beq $t3, $t6, done_gravity
-    li $t1, 1
-    sw $t1, 0($t0)
-    li $t5, 1
-    sw $t5, 0($t4)
-    j apply_physics
+    li   $t6, 61            # maximum allowed top row for player sprite
+    beq  $t3, $t6, done_gravity
+    li   $t1, 1
+    sw   $t1, 0($t0)
+    li   $t5, 1
+    sw   $t5, 0($t4)
+    j    apply_physics
 
 apply_physics:
-    add $t3, $t3, $t5
-    bgt $t3, 63, set_floor
-    sw $t3, 0($t2)
+    add  $t3, $t3, $t5       # new player row = old row + velocity
+    bgt  $t3, 61, set_floor  # if new row exceeds 61, clamp to floor
+    sw   $t3, 0($t2)
     addi $t5, $t5, 1
-    sw $t5, 0($t4)
-    j done_gravity
+    sw   $t5, 0($t4)
+    j    done_gravity
 
 set_floor:
-    li $t3, 63
-    sw $t3, 0($t2)
-    li $t5, 0
-    sw $t5, 0($t4)
-    li $t1, 0
-    sw $t1, 0($t0)
-    j done_gravity
+    li   $t3, 61            # clamp to maximum allowed top row
+    sw   $t3, 0($t2)
+    li   $t5, 0
+    sw   $t5, 0($t4)
+    li   $t1, 0
+    sw   $t1, 0($t0)
+    j    done_gravity
 
 done_gravity:
-    jr $ra
+    jr   $ra
 
 ######################################################################
 # SAFEGUARD HALT (fallback loop)
 ######################################################################
 end:
-    j end
+    j    end
