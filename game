@@ -42,6 +42,16 @@ current_player_col: .word 0
 # Constant for spaceship color (Green)
 sp_color: .word 0x0000FF00          # Green color for spaceship
 
+# New colors for the reddish rocky planet
+rocky_planet_color: .word 0x00B22222    # Primary firebrick red for rocky planet
+rocky_detail_color: .word 0x00CD5C5C    # Secondary (slightly lighter) red for rocky details
+# Multi-shade reds for a more detailed planet
+darkest_red:   .word 0x008B0000   # Dark red
+dark_red:      .word 0x00B22222   # Firebrick
+mid_red:       .word 0x00CD5C5C   # IndianRed
+light_red:     .word 0x00FA8072   # Salmon
+
+
 .text
 main:
     ################################################################
@@ -89,6 +99,96 @@ bg_next:
     addi $t4, $t4, 1
     blt  $t4, 64, bg_row_loop
 
+   ################################################################
+# DRAW A MORE DETAILED REDDISH PLANET (TOP LEFT)
+# - Bounding box: 24×24
+# - Center = (base_row+12, base_col+12)
+# - Radius = 12
+# - 4-shade swirl pattern for stripes
+################################################################
+    li   $t0, 2         # planet_base_row
+    li   $t1, 2         # planet_base_col
+    li   $t2, 24        # bounding_box_size (width & height)
+    li   $t3, 12        # planet_radius
+
+    # Precompute the center row & col
+    addu $t8, $t1, $t3   # center_col = planet_base_col + 12
+    addu $t9, $t0, $t3   # center_row = planet_base_row + 12
+
+    li   $t4, 0         # Outer loop counter (row offset = i)
+planet_row_loop:
+    bge  $t4, $t2, planet_done  # if i >= 24, finished
+    addu $t6, $t0, $t4          # current_row = planet_base_row + i
+
+    li   $t5, 0                 # Inner loop counter (col offset = j)
+planet_col_loop:
+    bge  $t5, $t2, planet_next_row  # if j >= 24, go to next row
+    addu $t7, $t1, $t5          # current_col = planet_base_col + j
+
+    # --- Compute dx = (current_col - center_col), dy = (current_row - center_row) ---
+    sub  $a0, $t7, $t8          # dx
+    sub  $a1, $t6, $t9          # dy
+
+    # --- Check distance^2 <= radius^2 (12^2 = 144) ---
+    # distance^2 = dx^2 + dy^2
+    mul  $v1, $a0, $a0          # dx^2 -> $v1
+    mul  $t3, $a1, $a1          # dy^2 -> $t3 (overwrites $t3 which had radius)
+    addu $v1, $v1, $t3          # v1 = dx^2 + dy^2
+    li   $t3, 144               # 12^2 = 144
+    bgt  $v1, $t3, planet_skip_pixel  # if outside circle, skip
+
+    # Inside circle -> compute swirl pattern
+    # swirl_value = (dx + 2*dy) >> 2
+    # Then pick color by swirl_value mod 4
+    sll  $v0, $a1, 1            # v0 = 2*dy
+    addu $v0, $v0, $a0          # v0 = (2*dy + dx)
+    sra  $v0, $v0, 2            # swirl_value = (dx + 2*dy) >> 2
+    andi $v0, $v0, 3            # swirl_value mod 4
+
+    # Use a small switch-like sequence to pick from 4 reds
+    li   $t3, 0
+    beq  $v0, $zero, pick_darkest
+    li   $t3, 1
+    beq  $v0, $t3, pick_dark
+    li   $t3, 2
+    beq  $v0, $t3, pick_mid
+    # else case -> pick_light
+
+pick_light:
+    lw   $t3, light_red
+    j    planet_set_pixel
+
+pick_mid:
+    lw   $t3, mid_red
+    j    planet_set_pixel
+
+pick_dark:
+    lw   $t3, dark_red
+    j    planet_set_pixel
+
+pick_darkest:
+    lw   $t3, darkest_red
+
+planet_set_pixel:
+    # Framebuffer address = s0 + (row*512) + (col*4)
+    mul  $v1, $t6, 512         # row offset in bytes
+    sll  $a0, $t7, 2           # col offset = col*4
+    addu $v1, $s0, $v1        # base + row offset
+    addu $v1, $v1, $a0        # final pixel address
+    sw   $t3, 0($v1)          # store chosen color
+
+planet_skip_pixel:
+    addi $t5, $t5, 1          # j++
+    j    planet_col_loop
+
+planet_next_row:
+    addi $t4, $t4, 1          # i++
+    j    planet_row_loop
+
+planet_done:
+
+
+    
     ################################################################
     # DRAW STATIC OBJECTS: PLANET, SUN, SPACESHIP, AND PLATFORMS
     ################################################################
@@ -134,7 +234,7 @@ floor_loop:
     mul  $t7, $t5, 4
     add  $t8, $s0, $t6
     add  $t8, $t8, $t7
-    sw   $s1, 0($t8)      # platform pixel (grey)
+    sw   $t1, 0($t8)      # platform pixel (grey)
     addi $t5, $t5, 1
     blt  $t5, 128, floor_loop
 
