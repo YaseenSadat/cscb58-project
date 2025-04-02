@@ -29,41 +29,44 @@
 #
 #####################################################################
 
-.eqv BASE_ADDRESS 0x10008000
+.eqv BASE_ADDRESS 0x10008000    # Framebuffer base address in memory
 
 .data
-player_row: .word 60     # Y-position (row)
-player_col: .word 2      # X-position (column)
-player_velocity: .word 0        # current Y velocity
-is_jumping: .word 0             # 1 if jumping/falling, 0 if grounded
+# Stores the player's vertical and horizontal positions
+player_row: .word 60            # Y-position (row)
+player_col: .word 2             # X-position (column)
 
+# Jumping physics variables
+player_velocity: .word 0        # Y velocity (positive = falling, negative = jumping up)
+is_jumping: .word 0             # 1 if in the air (jumping or falling), 0 if grounded
 
 .text
 main:
     ################################################################
-    # Store color constants in saved registers so they are not 
-    # overwritten by keyboard input. 
+    # INITIALIZE CONSTANTS
+    # s0 = framebuffer base, s1 = platform color, s2 = player color,
+    # s3 = background color
     ################################################################
-    li $s0, BASE_ADDRESS        # Framebuffer base address
-    li $s1, 0x00808080          # Platform color (grey)
-    li $s2, 0x00FF0000          # Player color (intended red)
-    li $s3, 0x00000000          # Background color (black)
+    li $s0, BASE_ADDRESS        # Base address of the display
+    li $s1, 0x00808080          # Grey color for platforms
+    li $s2, 0x00FF0000          # Red color for player
+    li $s3, 0x00000000          # Black for background/erasing
 
     ################################################################
-    # Draw static platforms
+    # DRAW STATIC PLATFORMS (floor + 2 floating)
     ################################################################
-    li $t4, 63      # floor row
+    li $t4, 63                  # Floor row
     li $t5, 0
 floor_loop:
-    mul $t6, $t4, 512           # row * 512
-    mul $t7, $t5, 4             # col * 4
-    add $t8, $s0, $t6           # base + row offset
-    add $t8, $t8, $t7           # + col offset
-    sw $s1, 0($t8)              # store platform color
+    mul $t6, $t4, 512
+    mul $t7, $t5, 4
+    add $t8, $s0, $t6
+    add $t8, $t8, $t7
+    sw $s1, 0($t8)              # Draw floor pixel
     addi $t5, $t5, 1
     blt $t5, 128, floor_loop
 
-    # Another platform
+    # Platform 1 (row 40, cols 20-40)
     li $t4, 40
     li $t5, 20
 plat1_loop:
@@ -75,7 +78,7 @@ plat1_loop:
     addi $t5, $t5, 1
     blt $t5, 41, plat1_loop
 
-    # Another platform
+    # Platform 2 (row 30, cols 70-100)
     li $t4, 30
     li $t5, 70
 plat2_loop:
@@ -88,120 +91,135 @@ plat2_loop:
     blt $t5, 101, plat2_loop
 
     ################################################################
-    # Initialize "previous" position
+    # INIT previous player position for erase logic
     ################################################################
     li $s6, 60    # prev_row
     li $s7, 2     # prev_col
 
 ######################################################################
 # MAIN GAME LOOP
+# Handles input, erases previous player, applies gravity,
+# draws updated position, and waits for next frame
 ######################################################################
 game_loop:
+        ################################################################
+    # 1) Handle Continuous Input If a Key Is Held Down
     ################################################################
-    # 1) Keyboard Input
-    #    Use temporary registers for I/O so we don't overwrite colors
-    ################################################################
-    li  $t0, 0xffff0000       # MMIO status address
-    lw  $t1, 0($t0)           # check if key was pressed (1 = yes)
-    bne $t1, 1, no_input
+    li $t0, 0xffff0000          # MMIO base
+    lw $t1, 0($t0)              # Check if a key is being held (1 = yes)
+    bne $t1, 1, skip_input      # If no key, skip input handling
 
-    lw  $t2, 4($t0)           # get ASCII code of key
+    lw $t2, 4($t0)              # Get ASCII of the key
 
-    # 'a' = 97
-    li $t3, 97
+    li $t3, 97                  # 'a'
     beq $t2, $t3, move_left
 
-    # 'd' = 100
-    li $t3, 100
+    li $t3, 100                 # 'd'
     beq $t2, $t3, move_right
 
-    # 'w' = 119
-    li $t3, 119
+    li $t3, 119                 # 'w'
     beq $t2, $t3, try_jump
 
-no_input:
+skip_input:
 
+
+
+no_input:
     ################################################################
-    # 2) Erase old player from previous position 
-    #    using $s6 (prev_row) and $s7 (prev_col)
+    # 2) Erase Previous Player Position
     ################################################################
     li $t8, 0
 erase_loop_rows:
     li $t9, 0
 erase_loop_cols:
-    # row = s6 + t8
-    # col = s7 + t9
-    # address = s0 + ((row*512) + col)*4
-    add $t4, $s6, $t8          # old row
-    add $t5, $s7, $t9          # old col
+    add $t4, $s6, $t8
+    add $t5, $s7, $t9
     mul $t6, $t4, 512
     mul $t7, $t5, 4
     add $t7, $t7, $t6
     add $t7, $s0, $t7
-    sw $s3, 0($t7)             # store background color
-
+    sw $s3, 0($t7)
     addi $t9, $t9, 1
     blt $t9, 3, erase_loop_cols
     addi $t8, $t8, 1
     blt $t8, 3, erase_loop_rows
+
+    ################################################################
+    # 3) Apply Gravity (updates row based on jump/fall)
+    ################################################################
     jal apply_gravity
 
     ################################################################
-    # 3) Update current player position from memory
+    # 4) Load and Clamp Player Position from Memory
     ################################################################
-    la  $t0, player_row
-    la  $t1, player_col
-    lw  $t4, 0($t0)            # current row
-    lw  $t5, 0($t1)            # current col
+    la $t0, player_row
+    la $t1, player_col
+    lw $t4, 0($t0)            # row
+    lw $t5, 0($t1)            # col
+
+    li $t6, 0
+    blt $t5, $t6, fix_left
+    li $t6, 125
+    bgt $t5, $t6, fix_right
+    j skip_col_clamp
+
+fix_left:
+    li $t5, 0
+    sw $t5, 0($t1)
+    j skip_col_clamp
+
+fix_right:
+    li $t5, 125
+    sw $t5, 0($t1)
+
+skip_col_clamp:
+    lw $t5, 0($t1)            # reload clamped value
 
     ################################################################
-    # 4) Draw player at new position (3x3)
+    # 5) Draw 3x3 Player Block at New Position
     ################################################################
     li $t8, 0
 draw_loop_rows:
     li $t9, 0
 draw_loop_cols:
-    add $t6, $t4, $t8          # row
-    add $t7, $t5, $t9          # col
-    mul $t6, $t6, 512          # row * 512
-    mul $t7, $t7, 4            # col * 4
+    add $t6, $t4, $t8
+    add $t7, $t5, $t9
+    mul $t6, $t6, 512
+    mul $t7, $t7, 4
     add $t6, $t6, $t7
-    add $t6, $s0, $t6          # base + offset
-    sw $s2, 0($t6)             # store player color (red)
-
+    add $t6, $s0, $t6
+    sw $s2, 0($t6)
     addi $t9, $t9, 1
     blt $t9, 3, draw_loop_cols
     addi $t8, $t8, 1
     blt $t8, 3, draw_loop_rows
 
     ################################################################
-    # 5) Store new position as "previous" for next iteration
+    # 6) Save Current Position as Previous for Next Frame
     ################################################################
     move $s6, $t4
     move $s7, $t5
 
     ################################################################
-    # 6) Small frame delay
+    # 7) Frame Delay
     ################################################################
     li $v0, 32
     li $a0, 40
     syscall
 
-    ################################################################
-    # 7) Jump back to main game loop
-    ################################################################
     j game_loop
 
 ######################################################################
-# MOVEMENT HANDLING
+# INPUT HANDLERS
 ######################################################################
 move_left:
     lw $t4, player_col
-    blez $t4, done_moving
+    li $t5, 2
+    ble $t4, $t5, done_moving
     addi $t4, $t4, -1
     sw $t4, player_col
 done_moving:
-    j game_loop
+    j skip_input
 
 move_right:
     lw $t4, player_col
@@ -210,43 +228,32 @@ move_right:
     addi $t4, $t4, 1
     sw $t4, player_col
 done_moving2:
-    j game_loop
+    j skip_input
 
 try_jump:
     la $t0, is_jumping
     lw $t1, 0($t0)
-    bnez $t1, game_loop         # already jumping? skip
-
+    bnez $t1, game_loop         # skip if already jumping/falling
     li $t1, 1
-    sw $t1, 0($t0)              # set is_jumping = 1
-
+    sw $t1, 0($t0)
     la $t2, player_velocity
-    li $t3, -5                  # negative = upward motion
+    li $t3, -5                  # jump force (negative Y velocity)
     sw $t3, 0($t2)
-
-    j game_loop
+    j skip_input
 
 ######################################################################
-# APPLY GRAVITY / JUMP PHYSICS
+# GRAVITY & JUMP PHYSICS ENGINE
 ######################################################################
 apply_gravity:
     la $t0, is_jumping
     lw $t1, 0($t0)
-
     la $t2, player_row
-    lw $t3, 0($t2)            # current Y position
-
+    lw $t3, 0($t2)
     la $t4, player_velocity
-    lw $t5, 0($t4)            # Y velocity
-
-    # If jumping or falling
+    lw $t5, 0($t4)
     bnez $t1, apply_physics
-
-    # If on the floor, stop falling
     li $t6, 63
     beq $t3, $t6, done_gravity
-
-    # Otherwise, begin falling
     li $t1, 1
     sw $t1, 0($t0)
     li $t5, 1
@@ -254,27 +261,27 @@ apply_gravity:
     j apply_physics
 
 apply_physics:
-    add $t3, $t3, $t5          # new row = current row + velocity
-    bgt $t3, 63, set_floor     # clamp to floor if below
-
-    sw $t3, 0($t2)             # update player_row
-    addi $t5, $t5, 1           # gravity: velocity increases (falling faster)
+    add $t3, $t3, $t5
+    bgt $t3, 63, set_floor
+    sw $t3, 0($t2)
+    addi $t5, $t5, 1
     sw $t5, 0($t4)
     j done_gravity
 
 set_floor:
     li $t3, 63
-    sw $t3, 0($t2)             # set to floor row
+    sw $t3, 0($t2)
     li $t5, 0
-    sw $t5, 0($t4)             # stop velocity
+    sw $t5, 0($t4)
     li $t1, 0
-    sw $t1, 0($t0)             # no longer jumping
+    sw $t1, 0($t0)
     j done_gravity
 
 done_gravity:
     jr $ra
 
-
-# Prevent falling off bottom: infinite loop at end of program
+######################################################################
+# SAFEGUARD HALT (fallback loop)
+######################################################################
 end:
     j end
