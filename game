@@ -34,6 +34,9 @@
 .data
 player_row: .word 60     # Y-position (row)
 player_col: .word 2      # X-position (column)
+player_velocity: .word 0        # current Y velocity
+is_jumping: .word 0             # 1 if jumping/falling, 0 if grounded
+
 
 .text
 main:
@@ -141,6 +144,7 @@ erase_loop_cols:
     blt $t9, 3, erase_loop_cols
     addi $t8, $t8, 1
     blt $t8, 3, erase_loop_rows
+    jal apply_gravity
 
     ################################################################
     # 3) Update current player position from memory
@@ -209,8 +213,67 @@ done_moving2:
     j game_loop
 
 try_jump:
-    # Placeholder for jumping
+    la $t0, is_jumping
+    lw $t1, 0($t0)
+    bnez $t1, game_loop         # already jumping? skip
+
+    li $t1, 1
+    sw $t1, 0($t0)              # set is_jumping = 1
+
+    la $t2, player_velocity
+    li $t3, -5                  # negative = upward motion
+    sw $t3, 0($t2)
+
     j game_loop
+
+######################################################################
+# APPLY GRAVITY / JUMP PHYSICS
+######################################################################
+apply_gravity:
+    la $t0, is_jumping
+    lw $t1, 0($t0)
+
+    la $t2, player_row
+    lw $t3, 0($t2)            # current Y position
+
+    la $t4, player_velocity
+    lw $t5, 0($t4)            # Y velocity
+
+    # If jumping or falling
+    bnez $t1, apply_physics
+
+    # If on the floor, stop falling
+    li $t6, 63
+    beq $t3, $t6, done_gravity
+
+    # Otherwise, begin falling
+    li $t1, 1
+    sw $t1, 0($t0)
+    li $t5, 1
+    sw $t5, 0($t4)
+    j apply_physics
+
+apply_physics:
+    add $t3, $t3, $t5          # new row = current row + velocity
+    bgt $t3, 63, set_floor     # clamp to floor if below
+
+    sw $t3, 0($t2)             # update player_row
+    addi $t5, $t5, 1           # gravity: velocity increases (falling faster)
+    sw $t5, 0($t4)
+    j done_gravity
+
+set_floor:
+    li $t3, 63
+    sw $t3, 0($t2)             # set to floor row
+    li $t5, 0
+    sw $t5, 0($t4)             # stop velocity
+    li $t1, 0
+    sw $t1, 0($t0)             # no longer jumping
+    j done_gravity
+
+done_gravity:
+    jr $ra
+
 
 # Prevent falling off bottom: infinite loop at end of program
 end:
