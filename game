@@ -68,6 +68,12 @@ light_red:     .word 0x00FA8072   # Salmon
 # Define black color for facial features
 black: .word 0x00000000
 
+hearts: .word 4
+
+# New variables for damage cooldown:
+    damage_cooldown: .word 0    # When > 0, player is temporarily invulnerable.
+    damage_delay:    .word 30   # Delay value in frames (adjust as needed)
+
 # -------------------------------------------------------------------
 # Earth planet colors (for an Earth‐like planet, top right):
 #   - earth_dark:    dark ocean
@@ -112,6 +118,8 @@ bg_col_loop:
     blt  $t5, 128, bg_col_loop
     addi $t4, $t4, 1
     blt  $t4, 64, bg_row_loop
+
+
 
 ################################################################
 # DRAW STARS (plus-shaped, 4x4 pixel stars, each row has unique spacing)
@@ -189,6 +197,156 @@ end_star_row:
     jr $ra
 
 stars_done:
+
+    ################################################################
+    # DRAW BLACK RECTANGLE (Top-right part of background)
+    # Rows 1–10, Cols 105–125
+    ################################################################
+    li   $t0, 3           # Start row
+black_rect_row_loop:
+    li   $t1, 95         # Start col
+black_rect_col_loop:
+    mul  $t2, $t0, 512    # row offset in bytes
+    mul  $t3, $t1, 4      # col offset in bytes
+    add  $t4, $s0, $t2    # base + row offset
+    add  $t4, $t4, $t3    # + col offset
+    li   $t5, 0x00000000  # black color
+    sw   $t5, 0($t4)      # draw black pixel
+    addi $t1, $t1, 1
+    blt  $t1, 127, black_rect_col_loop  # end at col 125
+    addi $t0, $t0, 1
+    ble  $t0, 9, black_rect_row_loop
+
+    ################################################################
+    # DRAW WHITE BORDER AROUND BLACK RECTANGLE (1 pixel bigger)
+    # This border will now be drawn after the black rectangle,
+    # so it will be visible on all sides.
+    ################################################################
+    li   $t5, 0x00FFFFFF      # White color
+    li   $t0, 2               # Start row (1 row above the black rect)
+white_border_row_loop:
+    li   $t1, 94            # Start col (1 col left of the black rect)
+white_border_col_loop:
+    # Draw only border pixels (top, bottom, left, or right)
+    li   $t6, 2           # top border row
+    li   $t7, 10          # bottom border row
+    li   $t8, 94          # left border col
+    li   $t9, 126         # right border col
+    beq  $t0, $t6, draw_white_border
+    beq  $t0, $t7, draw_white_border
+    beq  $t1, $t8, draw_white_border
+    beq  $t1, $t9, draw_white_border
+    j skip_white_border
+
+draw_white_border:
+    mul  $s1, $t0, 512     # row offset in bytes
+    mul  $s2, $t1, 4       # col offset in bytes
+    add  $s3, $s0, $s1
+    add  $s3, $s3, $s2
+    sw   $t5, 0($s3)       # write white pixel
+
+skip_white_border:
+    addi $t1, $t1, 1
+    ble  $t1, 126, white_border_col_loop
+    addi $t0, $t0, 1
+    ble  $t0, 10, white_border_row_loop
+
+
+##############################################################
+# DRAW HEARTS (4 red hearts, top-right, inside black rectangle)
+##############################################################
+li   $t0, 0x00FF0000    # Red color
+li   $t1, 4             # Start row
+li   $t2, 98            # NEW: Start col (moved left from 107 to 93)
+li   $t3, 4             # NEW: Number of hearts = 4
+
+
+heart_loop:
+    beq  $t3, $zero, hearts_done
+
+    # Draw: R R _ R R
+    li $t4, 0   # row offset
+    li $t5, 0
+heart_row0:
+    bge $t5, 5, heart_row0_done
+    li  $t6, 1
+    beq $t5, 2, skip_pixel0
+    j draw_pixel0
+skip_pixel0:
+    li $t6, 0
+draw_pixel0:
+    beq $t6, $zero, next_col0
+    add $t7, $t2, $t5
+    add $t8, $t1, $t4
+    mul $t9, $t8, 512
+    mul $s1, $t7, 4
+    add $s2, $s0, $t9
+    add $s2, $s2, $s1
+    sw  $t0, 0($s2)
+next_col0:
+    addi $t5, $t5, 1
+    j heart_row0
+heart_row0_done:
+
+    # Draw: R R R R R
+    li $t4, 1
+    li $t5, 0
+heart_row1:
+    bge $t5, 5, heart_row1_done
+    add $t7, $t2, $t5
+    add $t8, $t1, $t4
+    mul $t9, $t8, 512
+    mul $s1, $t7, 4
+    add $s2, $s0, $t9
+    add $s2, $s2, $s1
+    sw  $t0, 0($s2)
+    addi $t5, $t5, 1
+    j heart_row1
+heart_row1_done:
+
+    # Draw: _ R R R _
+    li $t4, 2
+    li $t5, 0
+heart_row2:
+    bge $t5, 5, heart_row2_done
+    li  $t6, 0
+    bgt $t5, 0, check_col2
+    j next_col2
+check_col2:
+    blt $t5, 4, set_draw2
+    j next_col2
+set_draw2:
+    li $t6, 1
+next_col2:
+    beq $t6, $zero, skip_pixel2
+    add $t7, $t2, $t5
+    add $t8, $t1, $t4
+    mul $t9, $t8, 512
+    mul $s1, $t7, 4
+    add $s2, $s0, $t9
+    add $s2, $s2, $s1
+    sw  $t0, 0($s2)
+skip_pixel2:
+    addi $t5, $t5, 1
+    j heart_row2
+heart_row2_done:
+
+    # Draw: _ _ R _ _
+    li $t4, 3
+    addi $t7, $t2, 2
+    add $t8, $t1, $t4
+    mul  $t9, $t8, 512
+    mul  $s1, $t7, 4
+    add  $s2, $s0, $t9
+    add  $s2, $s2, $s1
+    sw   $t0, 0($s2)
+
+    # Advance to next heart (7 columns apart)
+    addi $t2, $t2, 7
+    addi $t3, $t3, -1
+    j heart_loop
+
+hearts_done:
 
     ################################################################
     # DRAW RED PLANET (TOP LEFT, swirl pattern)
@@ -755,7 +913,27 @@ enemy_draw_done_rows:
     bgt  $t3, $t8, no_enemy_collision  # if player's left > enemy's right, no collision
 
     # If none of the above, a collision is detected.
-    j go_to_start_screen
+        # Collision detected: lose one heart.
+    la   $t0, hearts      # Load address of hearts
+    lw   $t1, 0($t0)      # Load current heart count into $t1
+    addi $t1, $t1, -1     # Decrement heart count by 1
+    sw   $t1, 0($t0)      # Store the new heart count back
+
+    blez $t1, game_over   # If hearts <= 0, then game over
+    j continue_game      # Otherwise, continue playing
+
+game_over:
+    li   $t0, 4          # Reset hearts count to 4 for a new game.
+    la   $t1, hearts
+    sw   $t0, 0($t1)
+    jal  start_screen     # Call start screen routine.
+    j    game_loop       # Return to the main game loop.
+
+
+continue_game:
+    # Optionally, update the on-screen hearts if needed.
+    j game_loop
+
 
 no_enemy_collision:
 
