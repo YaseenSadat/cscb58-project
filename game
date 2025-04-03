@@ -20,6 +20,12 @@
 #    - Right facing (player_facing==0): eyes at (row1, col1) and (row1, col3)
 #    - Left facing  (player_facing==1): eyes at (row1, col0) and (row1, col2)
 #
+# 2. Floating Platform Collision (one-way):
+#    - Platform A (row 50, cols 10 to 30) now collides with the player only when
+#      falling from above. If the player's bottom (player_row+3) goes from above row 50
+#      to row 50 or below and the player horizontally overlaps the platform,
+#      the player is set to stand on the platform (player_row = 46).
+#
 # Additional information:
 # - Step-by-step build in progress
 #
@@ -292,7 +298,7 @@ earth_done:
 ################################################################
 li $t9, 0x00808080       # Grey color
 
-# Platform A: row 50, columns 10 to 30
+# Platform A: row 50, columns 10 to 30 (floating platform)
 li $t4, 50
 li $t5, 10
 platA_loop:
@@ -401,7 +407,7 @@ restore_bg_loop_cols:
     blt  $t8, 4, restore_bg_loop_rows
 
     ################################################################
-    # 3) Apply Gravity
+    # 3) Apply Gravity (with floating platform collision)
     ################################################################
     jal  apply_gravity
 
@@ -588,38 +594,110 @@ try_jump:
     j skip_input
 
 ######################################################################
-# GRAVITY ENGINE
+# GRAVITY ENGINE (platform is fully solid: no climbing from below)
 ######################################################################
 apply_gravity:
     la   $t0, is_jumping
     lw   $t1, 0($t0)
     la   $t2, player_row
-    lw   $t3, 0($t2)
+    lw   $t3, 0($t2)       # old player row in $t3
     la   $t4, player_velocity
-    lw   $t5, 0($t4)
+    lw   $t5, 0($t4)       # current velocity in $t5
     bnez $t1, apply_physics
-    li   $t6, 60             # floor: max row = 60
+    li   $t6, 60          # floor: max row = 60
     beq  $t3, $t6, done_gravity
     li   $t1, 1
     sw   $t1, 0($t0)
     li   $t5, 1
     sw   $t5, 0($t4)
     j    apply_physics
+
 apply_physics:
-    add  $t3, $t3, $t5
-    bgt  $t3, 60, set_floor
-    sw   $t3, 0($t2)
-    addi $t5, $t5, 1
-    sw   $t5, 0($t4)
+    move $t6, $t3         # save old row in $t6
+    add  $t3, $t3, $t5    # new row = old row + velocity
+
+    # For downward collision, compute bottoms:
+    addi $t7, $t3, 3      # new_bottom = new row + 3
+    addi $t9, $t6, 3      # old_bottom = old row + 3
+
+    # Branch based on velocity:
+    bgtz $t5, check_downward   # if falling (velocity > 0)
+    bltz $t5, check_upward     # if jumping (velocity < 0)
+    j no_platform_collision    # if velocity == 0, no collision
+
+#---------------- Downward Collision (falling) ----------------
+check_downward:
+    # Check vertical collision: old_bottom < 50 and new_bottom >= 50
+    slti $s4, $t9, 50          # $s4 = 1 if old_bottom < 50
+    slti $s5, $t7, 50          # $s5 = 1 if new_bottom < 50
+    beq  $s4, $zero, no_platform_collision  # if old_bottom not less than 50, skip
+    bnez $s5, no_platform_collision          # if new_bottom still less than 50, skip
+    j    check_horizontal_downward
+
+check_horizontal_downward:
+    # Horizontal overlap: player spans player_col to player_col+3
+    lw   $s6, player_col      # player's left col in $s6
+    addi $t8, $s6, 3          # player's right col in $t8
+    li   $s7, 31              # if player's left col >= 31, then no overlap
+    bge  $s6, $s7, no_platform_collision
+    li   $s7, 10              # platform left boundary = 10
+    blt  $t8, $s7, no_platform_collision  # if player's right col < 10, no overlap
+
+    # Downward collision detected: clamp so player's bottom = 50 (i.e. player_row = 50 - 4 = 46)
+    li   $t3, 46
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping      # reset jumping flag
     j    done_gravity
+
+#---------------- Upward Collision (jumping) ----------------
+check_upward:
+    # For upward collision, check player's top:
+    # old_top = old row ($t6) and new_top = new row ($t3)
+    # Collision if old_top > 50 and new_top <= 50.
+    bgt  $t6, 50, continue_upward
+    j    no_platform_collision
+continue_upward:
+    ble  $t3, 50, collision_upward
+    j    no_platform_collision
+
+collision_upward:
+    # Horizontal overlap check (same as downward)
+    lw   $s6, player_col      # player's left col
+    addi $t8, $s6, 3          # player's right col
+    li   $s7, 31
+    bge  $s6, $s7, no_platform_collision
+    li   $s7, 10
+    blt  $t8, $s7, no_platform_collision
+
+    # Upward collision detected: clamp so that player's top stays below platform.
+    # We'll set player_row = 51 so that the sprite (rows 51..54) remains below row 50.
+    li   $t3, 51
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping      # reset jumping flag
+    j    done_gravity
+
+no_platform_collision:
+    # If no platform collision, ensure we don't pass the floor.
+    bgt  $t3, 60, set_floor
+    sw   $t3, player_row
+    addi $t5, $t5, 1
+    sw   $t5, player_velocity
+done_gravity:
+    jr   $ra
+
 set_floor:
     li   $t3, 60
-    sw   $t3, 0($t2)
+    sw   $t3, player_row
     li   $t5, 0
-    sw   $t5, 0($t4)
+    sw   $t5, player_velocity
     li   $t1, 0
-    sw   $t1, 0($t0)
-done_gravity:
+    sw   $t1, is_jumping
     jr   $ra
 
 ######################################################################
