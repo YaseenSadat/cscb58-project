@@ -50,6 +50,10 @@ current_player_col: .word 0
 # Buffer to store the 4×4 background region under the player (16 words = 64 bytes)
 player_bg_buffer: .space 64
 
+# Movement delay variables
+move_delay_counter: .word 0    # Countdown counter to control repeat movement
+move_delay_value:   .word 2    # Delay constant (adjust for speed)
+
 # Multi-shade reds for a more detailed red planet (top left)
 darkest_red:   .word 0x008B0000   # Dark red
 dark_red:      .word 0x00B22222   # Firebrick
@@ -369,20 +373,35 @@ platE_loop:
 ######################################################################
 game_loop:
     ################################################################
-    # 1) Handle Continuous Input
+    # 1) Handle Continuous Input with Delay
     ################################################################
     li   $t0, 0xffff0000      # Keyboard MMIO base
-    lw   $t1, 0($t0)          # key status
-    bne  $t1, 1, skip_input
-    lw   $t2, 4($t0)          # ASCII code
-    li   $t3, 97              # 'a'
-    beq  $t2, $t3, move_left
-    li   $t3, 100             # 'd'
-    beq  $t2, $t3, move_right
-    li   $t3, 119             # 'w'
-    beq  $t2, $t3, try_jump
-skip_input:
+    lw   $t1, 0($t0)          # Read key status
+    beq  $t1, $zero, reset_delay   # No key pressed: reset delay counter
 
+    lw   $t2, move_delay_counter   # Load delay counter
+    bnez $t2, decrement_delay       # If counter is not zero, skip input
+
+    # A key is pressed and delay counter is 0; process input:
+    lw   $t3, 4($t0)          # ASCII code
+    li   $t4, 97              # 'a'
+    beq  $t3, $t4, move_left
+    li   $t4, 100             # 'd'
+    beq  $t3, $t4, move_right
+    li   $t4, 119             # 'w'
+    beq  $t3, $t4, try_jump
+
+decrement_delay:
+    lw   $t2, move_delay_counter
+    addi $t2, $t2, -1
+    sw   $t2, move_delay_counter
+reset_delay:
+    # If no key is pressed, reset the counter to 0
+    li   $t2, 0
+    sw   $t2, move_delay_counter
+    j skip_input
+
+skip_input:
     ################################################################
     # 2) Restore Old Player Background from Buffer
     # (Iterate 4 rows × 4 cols)
@@ -561,26 +580,32 @@ store_pixel:
 move_left:
     lw   $t4, player_col
     li   $t5, 2
-    ble  $t4, $t5, done_moving
-    addi $t4, $t4, -1
+    ble  $t4, $t5, done_moving   # Prevent moving left if at or below boundary
+    addi $t4, $t4, -4            # Subtract 2 units => 2*4 = 8 pixels
     sw   $t4, player_col
     # Set facing to left (1)
     li   $t6, 1
     sw   $t6, player_facing
 done_moving:
+    lw   $t7, move_delay_value
+    sw   $t7, move_delay_counter
     j skip_input
+
 
 move_right:
     lw   $t4, player_col
     li   $t5, 124
-    bge  $t4, $t5, done_moving2
-    addi $t4, $t4, 1
+    bge  $t4, $t5, done_moving2  # Prevent moving right if at or beyond boundary
+    addi $t4, $t4, 4             # Add 2 units => 2*4 = 8 pixels
     sw   $t4, player_col
     # Set facing to right (0)
     li   $t6, 0
     sw   $t6, player_facing
 done_moving2:
+    lw   $t7, move_delay_value
+    sw   $t7, move_delay_counter
     j skip_input
+
 
 try_jump:
     la   $t0, is_jumping
@@ -589,8 +614,10 @@ try_jump:
     li   $t1, 1
     sw   $t1, 0($t0)
     la   $t2, player_velocity
-    li   $t3, -5
+    li   $t3, -6
     sw   $t3, 0($t2)
+    lw   $t7, move_delay_value
+    sw   $t7, move_delay_counter
     j skip_input
 
 ######################################################################
@@ -616,78 +643,230 @@ apply_physics:
     move $t6, $t3         # save old row in $t6
     add  $t3, $t3, $t5    # new row = old row + velocity
 
-    # For downward collision, compute bottoms:
+    # For collision checks, compute bottoms:
     addi $t7, $t3, 3      # new_bottom = new row + 3
     addi $t9, $t6, 3      # old_bottom = old row + 3
 
     # Branch based on velocity:
-    bgtz $t5, check_downward   # if falling (velocity > 0)
-    bltz $t5, check_upward     # if jumping (velocity < 0)
-    j no_platform_collision    # if velocity == 0, no collision
+    bgtz $t5, check_downward         # if falling (velocity > 0)
+    bltz $t5, check_upward_A         # if jumping (velocity < 0)
+    j no_platform_collision          # if velocity == 0
 
-#---------------- Downward Collision (falling) ----------------
+#---------------- Downward Collision for Platform A (row 50, cols 10–30) ----------------
 check_downward:
-    # Check vertical collision: old_bottom < 50 and new_bottom >= 50
     slti $s4, $t9, 50          # $s4 = 1 if old_bottom < 50
     slti $s5, $t7, 50          # $s5 = 1 if new_bottom < 50
-    beq  $s4, $zero, no_platform_collision  # if old_bottom not less than 50, skip
-    bnez $s5, no_platform_collision          # if new_bottom still less than 50, skip
-    j    check_horizontal_downward
+    beq  $s4, $zero, check_platform_B  # if old_bottom not less than 50, go to next
+    bnez $s5, check_platform_B          # if new_bottom still less than 50, no collision with A
+    j    check_horizontal_A
 
-check_horizontal_downward:
-    # Horizontal overlap: player spans player_col to player_col+3
-    lw   $s6, player_col      # player's left col in $s6
-    addi $t8, $s6, 3          # player's right col in $t8
-    li   $s7, 31              # if player's left col >= 31, then no overlap
-    bge  $s6, $s7, no_platform_collision
-    li   $s7, 10              # platform left boundary = 10
-    blt  $t8, $s7, no_platform_collision  # if player's right col < 10, no overlap
-
-    # Downward collision detected: clamp so player's bottom = 50 (i.e. player_row = 50 - 4 = 46)
+check_horizontal_A:
+    lw   $s6, player_col      # player's left col
+    addi $t8, $s6, 3          # player's right col = left + 3
+    li   $s7, 31              # if player's left col >= 31, no collision
+    bge  $s6, $s7, check_platform_B
+    li   $s7, 10              # platform A left boundary = 10
+    blt  $t8, $s7, check_platform_B  # if player's right col < 10, no collision
+    # Downward collision detected for Platform A: clamp player's row to 50 - 4 = 46
     li   $t3, 46
     sw   $t3, player_row
     li   $t5, 0
     sw   $t5, player_velocity
     li   $t1, 0
-    sw   $t1, is_jumping      # reset jumping flag
+    sw   $t1, is_jumping
     j    done_gravity
 
-#---------------- Upward Collision (jumping) ----------------
-check_upward:
-    # For upward collision, check player's top:
-    # old_top = old row ($t6) and new_top = new row ($t3)
-    # Collision if old_top > 50 and new_top <= 50.
-    bgt  $t6, 50, continue_upward
-    j    no_platform_collision
-continue_upward:
-    ble  $t3, 50, collision_upward
-    j    no_platform_collision
+#---------------- Downward Collision for Platforms B–E ----------------
+# (As in your previous code; unchanged from earlier snippet.)
+check_platform_B:
+    slti $s4, $t9, 40
+    slti $s5, $t7, 40
+    beq  $s4, $zero, check_platform_C
+    bnez $s5, check_platform_C
+    lw   $s6, player_col
+    addi $t8, $s6, 3
+    li   $s7, 71
+    bge  $s6, $s7, check_platform_C
+    li   $s7, 40
+    blt  $t8, $s7, check_platform_C
+    li   $t3, 36
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping
+    j    done_gravity
 
-collision_upward:
-    # Horizontal overlap check (same as downward)
-    lw   $s6, player_col      # player's left col
-    addi $t8, $s6, 3          # player's right col
-    li   $s7, 31
+check_platform_C:
+    slti $s4, $t9, 30
+    slti $s5, $t7, 30
+    beq  $s4, $zero, check_platform_D
+    bnez $s5, check_platform_D
+    lw   $s6, player_col
+    addi $t8, $s6, 3
+    li   $s7, 116
+    bge  $s6, $s7, check_platform_D
+    li   $s7, 90
+    blt  $t8, $s7, check_platform_D
+    li   $t3, 26
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping
+    j    done_gravity
+
+check_platform_D:
+    slti $s4, $t9, 25
+    slti $s5, $t7, 25
+    beq  $s4, $zero, check_platform_E
+    bnez $s5, check_platform_E
+    lw   $s6, player_col
+    addi $t8, $s6, 3
+    li   $s7, 46
+    bge  $s6, $s7, check_platform_E
+    li   $s7, 20
+    blt  $t8, $s7, check_platform_E
+    li   $t3, 21
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping
+    j    done_gravity
+
+check_platform_E:
+    slti $s4, $t9, 45
+    slti $s5, $t7, 45
+    beq  $s4, $zero, no_platform_collision
+    bnez $s5, no_platform_collision
+    lw   $s6, player_col
+    addi $t8, $s6, 3
+    li   $s7, 121
     bge  $s6, $s7, no_platform_collision
-    li   $s7, 10
+    li   $s7, 95
     blt  $t8, $s7, no_platform_collision
+    li   $t3, 41
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping
+    j    done_gravity
 
-    # Upward collision detected: clamp so that player's top stays below platform.
-    # We'll set player_row = 51 so that the sprite (rows 51..54) remains below row 50.
+#---------------- Upward Collision Checks for Platforms A–E ----------------
+check_upward_A:
+    # For upward collision on Platform A (row 50)
+    ble  $t6, 50, check_upward_B  # if old top <= 50, no collision here
+    bgt  $t3, 50, check_upward_B  # if new top > 50, no collision
+    j    check_horizontal_up_A
+check_horizontal_up_A:
+    lw   $s6, player_col
+    addi $t8, $s6, 3
+    li   $s7, 31
+    bge  $s6, $s7, check_upward_B
+    li   $s7, 10
+    blt  $t8, $s7, check_upward_B
+    # Upward collision detected for Platform A: clamp player's row to 51
     li   $t3, 51
     sw   $t3, player_row
     li   $t5, 0
     sw   $t5, player_velocity
     li   $t1, 0
-    sw   $t1, is_jumping      # reset jumping flag
+    sw   $t1, is_jumping
     j    done_gravity
 
+check_upward_B:
+    # For upward collision on Platform B (row 40)
+    ble  $t6, 40, check_upward_C
+    bgt  $t3, 40, check_upward_C
+    j    check_horizontal_up_B
+check_horizontal_up_B:
+    lw   $s6, player_col
+    addi $t8, $s6, 3
+    li   $s7, 71
+    bge  $s6, $s7, check_upward_C
+    li   $s7, 40
+    blt  $t8, $s7, check_upward_C
+    # Upward collision detected for Platform B: clamp player's row to 41
+    li   $t3, 41
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping
+    j    done_gravity
+
+check_upward_C:
+    # For upward collision on Platform C (row 30)
+    ble  $t6, 30, check_upward_D
+    bgt  $t3, 30, check_upward_D
+    j    check_horizontal_up_C
+check_horizontal_up_C:
+    lw   $s6, player_col
+    addi $t8, $s6, 3
+    li   $s7, 116
+    bge  $s6, $s7, check_upward_D
+    li   $s7, 90
+    blt  $t8, $s7, check_upward_D
+    # Upward collision detected for Platform C: clamp player's row to 31
+    li   $t3, 31
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping
+    j    done_gravity
+
+check_upward_D:
+    # For upward collision on Platform D (row 25)
+    ble  $t6, 25, check_upward_E
+    bgt  $t3, 25, check_upward_E
+    j    check_horizontal_up_D
+check_horizontal_up_D:
+    lw   $s6, player_col
+    addi $t8, $s6, 3
+    li   $s7, 46
+    bge  $s6, $s7, check_upward_E
+    li   $s7, 20
+    blt  $t8, $s7, check_upward_E
+    # Upward collision detected for Platform D: clamp player's row to 26
+    li   $t3, 26
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping
+    j    done_gravity
+
+check_upward_E:
+    # For upward collision on Platform E (row 45)
+    ble  $t6, 45, no_platform_collision  # if old top <= 45, no upward collision
+    bgt  $t3, 45, no_platform_collision  # if new top > 45, no collision
+    j    check_horizontal_up_E
+check_horizontal_up_E:
+    lw   $s6, player_col
+    addi $t8, $s6, 3
+    li   $s7, 121
+    bge  $s6, $s7, no_platform_collision
+    li   $s7, 95
+    blt  $t8, $s7, no_platform_collision
+    # Upward collision detected for Platform E: clamp player's row to 46
+    li   $t3, 46
+    sw   $t3, player_row
+    li   $t5, 0
+    sw   $t5, player_velocity
+    li   $t1, 0
+    sw   $t1, is_jumping
+    j    done_gravity
+
+# If no upward collision detected for any platform:
 no_platform_collision:
-    # If no platform collision, ensure we don't pass the floor.
     bgt  $t3, 60, set_floor
     sw   $t3, player_row
     addi $t5, $t5, 1
     sw   $t5, player_velocity
+
 done_gravity:
     jr   $ra
 
@@ -700,8 +879,5 @@ set_floor:
     sw   $t1, is_jumping
     jr   $ra
 
-######################################################################
-# SAFEGUARD HALT LOOP
-######################################################################
 end:
     j end
