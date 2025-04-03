@@ -84,6 +84,87 @@ bg_col_loop:
     addi $t4, $t4, 1
     blt  $t4, 64, bg_row_loop
 
+################################################################
+# DRAW STARS (plus-shaped, 4x4 pixel stars, each row has unique spacing)
+################################################################
+
+# Row 1
+li $s4, 4
+li $s5, 4
+li $t8, 20
+jal draw_star_row
+
+# Row 2
+li $s4, 20
+li $s5, 10
+li $t8, 15
+jal draw_star_row
+
+# Row 3
+li $s4, 36
+li $s5, 2
+li $t8, 20
+jal draw_star_row
+
+# Row 4
+li $s4, 52
+li $s5, 8
+li $t8, 18
+jal draw_star_row
+
+j stars_done
+
+################################################################
+# Subroutine: draw_star_row
+# $s4 = fixed row, $s5 = starting col, $t8 = column gap
+################################################################
+draw_star_row:
+    li $t0, 124              # Max col
+    move $t7, $s5            # Use $t7 as current star col
+
+next_star:
+    bgt $t7, $t0, end_star_row
+    li  $t9, 0x00FFFF00      # Yellow color
+
+    # === Vertical Line of Plus ===
+    li   $t1, 0
+draw_v:
+    bgt  $t1, 2, done_v
+    add  $t2, $s4, $t1         # row = base_row + offset
+    addi $t3, $t7, 1           # col = base_col + 1
+    mul  $t4, $t2, 512         # row offset
+    mul  $t5, $t3, 4           # col offset (word aligned)
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t1, $t1, 1
+    j draw_v
+done_v:
+
+    # === Horizontal Line of Plus ===
+    li $t1, 0
+draw_h:
+    bgt $t1, 2, done_h
+    addi $t2, $s4, 1           # fixed center row
+    add  $t3, $t7, $t1         # col = base_col + offset
+    mul  $t4, $t2, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t1, $t1, 1
+    j draw_h
+done_h:
+
+    add $t7, $t7, $t8          # Move to next star col
+    j next_star
+
+end_star_row:
+    jr $ra
+
+stars_done:
+
+
     ################################################################
     # DRAW RED PLANET (TOP LEFT, swirl pattern)
     ################################################################
@@ -217,44 +298,70 @@ earth_next_row:
     j    earth_row_loop
 earth_done:
 
-    ################################################################
-    # DRAW PLATFORMS
-    ################################################################
-    # Floor: Draw bottom row (row 63)
-    li   $t4, 63          # Floor row
-    li   $t5, 0
-floor_loop:
-    mul  $t6, $t4, 512
-    mul  $t7, $t5, 4
-    add  $t8, $s0, $t6
-    add  $t8, $t8, $t7
-    sw   $s1, 0($t8)      # platform pixel (grey)
-    addi $t5, $t5, 1
-    blt  $t5, 128, floor_loop
+################################################################
+# DRAW PLATFORMS (A–E)
+################################################################
+li $t9, 0x00808080       # Grey color (platform color)
 
-    # Platform 1: row 40, cols 20–40
-    li   $t4, 40
-    li   $t5, 20
-plat1_loop:
-    mul  $t6, $t4, 512
-    mul  $t7, $t5, 4
-    add  $t8, $s0, $t6
-    add  $t8, $t8, $t7
-    sw   $s1, 0($t8)
+# Platform A: row 50, columns 10 to 30
+li $t4, 50               # row
+li $t5, 10               # start col
+platA_loop:
+    mul $t6, $t4, 512
+    mul $t7, $t5, 4
+    add $t8, $s0, $t6
+    add $t8, $t8, $t7
+    sw  $t9, 0($t8)
     addi $t5, $t5, 1
-    blt  $t5, 41, plat1_loop
+    blt  $t5, 31, platA_loop
 
-    # Platform 2: row 30, cols 70–100
-    li   $t4, 30
-    li   $t5, 70
-plat2_loop:
-    mul  $t6, $t4, 512
-    mul  $t7, $t5, 4
-    add  $t8, $s0, $t6
-    add  $t8, $t8, $t7
-    sw   $s1, 0($t8)
+# Platform B: row 40, columns 40 to 70  ← updated
+li $t4, 40
+li $t5, 40
+platB_loop:
+    mul $t6, $t4, 512
+    mul $t7, $t5, 4
+    add $t8, $s0, $t6
+    add $t8, $t8, $t7
+    sw  $t9, 0($t8)
     addi $t5, $t5, 1
-    blt  $t5, 101, plat2_loop
+    blt  $t5, 71, platB_loop
+
+# Platform C: row 30, columns 90 to 115
+li $t4, 30
+li $t5, 90
+platC_loop:
+    mul $t6, $t4, 512
+    mul $t7, $t5, 4
+    add $t8, $s0, $t6
+    add $t8, $t8, $t7
+    sw  $t9, 0($t8)
+    addi $t5, $t5, 1
+    blt  $t5, 116, platC_loop
+
+# Platform D: row 25, columns 20 to 45  ← updated row and range
+li $t4, 25
+li $t5, 20
+platD_loop:
+    mul $t6, $t4, 512
+    mul $t7, $t5, 4
+    add $t8, $s0, $t6
+    add $t8, $t8, $t7
+    sw  $t9, 0($t8)
+    addi $t5, $t5, 1
+    blt  $t5, 46, platD_loop   # stop at col 45
+
+# Platform E: row 45, columns 95 to 120  ← updated range
+li $t4, 45
+li $t5, 95
+platE_loop:
+    mul $t6, $t4, 512
+    mul $t7, $t5, 4
+    add $t8, $s0, $t6
+    add $t8, $t8, $t7
+    sw  $t9, 0($t8)
+    addi $t5, $t5, 1
+    blt  $t5, 121, platE_loop   # stop at col 120
 
     ################################################################
     # INIT PREVIOUS PLAYER POSITION
