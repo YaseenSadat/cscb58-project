@@ -39,42 +39,36 @@ player_bg_buffer: .space 36
 current_player_row: .word 0
 current_player_col: .word 0
 
-# Constant for spaceship color (Green)
-sp_color: .word 0x0000FF00          # Green color for spaceship
-
-# New colors for the reddish rocky planet
-rocky_planet_color: .word 0x00B22222    # Primary firebrick red for rocky planet
-rocky_detail_color: .word 0x00CD5C5C    # Secondary (slightly lighter) red for rocky details
-# Multi-shade reds for a more detailed planet
+# Multi-shade reds for a more detailed red planet (top left)
 darkest_red:   .word 0x008B0000   # Dark red
 dark_red:      .word 0x00B22222   # Firebrick
 mid_red:       .word 0x00CD5C5C   # IndianRed
 light_red:     .word 0x00FA8072   # Salmon
 
+# -------------------------------------------------------------------
+# Earth planet colors (for an Earth‐like planet, top right):
+#   - earth_dark:    dark ocean
+#   - earth_ocean:   bright ocean blue
+#   - earth_land:    green (land)
+#   - earth_clouds:  white (clouds)
+# -------------------------------------------------------------------
+earth_dark:    .word 0x00004080   # Dark ocean (R=0, G=64, B=128)
+earth_ocean:   .word 0x000080FF   # Ocean blue (R=0, G=128, B=255)
+earth_land:    .word 0x00008000   # Land green (R=0, G=128, B=0)
+earth_clouds:  .word 0x00FFFFFF   # Clouds (white)
 
 .text
 main:
     ################################################################
     # INITIALIZE CONSTANTS
-    # $s0 = framebuffer base, $s1 = platform color, $s2 = player color,
-    # $s3 = a default background color (dark blue)
     ################################################################
     li   $s0, BASE_ADDRESS        # Framebuffer base address
     li   $s1, 0x00808080          # Grey color for platforms
     li   $s2, 0x00FF0000          # Red color for player
-
-    # Background & object colors:
-    li   $s4, 0x00000080          # Dark Blue (space background)
-    li   $s5, 0x00FFFFFF          # White (stars)
-    li   $s6, 0x00FFD700          # Yellow (sun)
-    li   $s7, 0x00FF69B4          # Pink (planet)
-    # Spaceship color is now stored in memory (sp_color)
-
-    move $s3, $s4                # Default background color (dark blue)
+    li   $s3, 0x00000080          # Dark blue background
 
     ################################################################
-    # INITIAL DRAWING OF THE BACKGROUND
-    # (Draw over 64 rows × 128 columns; row offset = row*512, col offset = col*4)
+    # DRAW BACKGROUND (64 rows × 128 cols)
     ################################################################
     li   $t4, 0                 # row = 0
 bg_row_loop:
@@ -84,161 +78,161 @@ bg_col_loop:
     mul  $t7, $t5, 4            # column offset: 4 bytes per unit
     add  $t8, $s0, $t6          # base address + row offset
     add  $t8, $t8, $t7          # + column offset
-    sw   $s4, 0($t8)            # set pixel to dark blue
-
-    # Draw white star if ((row+col)&0x000F == 0)
-    add  $t3, $t4, $t5          # reuse $t3 temporarily for sum
-    andi $t3, $t3, 0x000F
-    beqz $t3, draw_star_bg
-    j    bg_next
-draw_star_bg:
-    sw   $s5, 0($t8)            # white star
-bg_next:
+    sw   $s3, 0($t8)            # set pixel to dark blue
     addi $t5, $t5, 1
     blt  $t5, 128, bg_col_loop
     addi $t4, $t4, 1
     blt  $t4, 64, bg_row_loop
 
-   ################################################################
-# DRAW A MORE DETAILED REDDISH PLANET (TOP LEFT)
-# - Bounding box: 24×24
-# - Center = (base_row+12, base_col+12)
-# - Radius = 12
-# - 4-shade swirl pattern for stripes
-################################################################
-    li   $t0, 2         # planet_base_row
-    li   $t1, 2         # planet_base_col
-    li   $t2, 24        # bounding_box_size (width & height)
-    li   $t3, 12        # planet_radius
+    ################################################################
+    # DRAW RED PLANET (TOP LEFT, swirl pattern)
+    ################################################################
+    li   $t0, 2         # red planet base row
+    li   $t1, 2         # red planet base col
+    li   $t2, 24        # bounding box size
+    li   $t3, 12        # radius
+    addu $t8, $t1, $t3  # center_col = base col + 12
+    addu $t9, $t0, $t3  # center_row = base row + 12
 
-    # Precompute the center row & col
-    addu $t8, $t1, $t3   # center_col = planet_base_col + 12
-    addu $t9, $t0, $t3   # center_row = planet_base_row + 12
-
-    li   $t4, 0         # Outer loop counter (row offset = i)
+    li   $t4, 0         # Outer loop counter (i)
 planet_row_loop:
-    bge  $t4, $t2, planet_done  # if i >= 24, finished
-    addu $t6, $t0, $t4          # current_row = planet_base_row + i
-
-    li   $t5, 0                 # Inner loop counter (col offset = j)
+    bge  $t4, $t2, planet_done
+    addu $t6, $t0, $t4      # current_row = base row + i
+    li   $t5, 0           # Inner loop counter (j)
 planet_col_loop:
-    bge  $t5, $t2, planet_next_row  # if j >= 24, go to next row
-    addu $t7, $t1, $t5          # current_col = planet_base_col + j
+    bge  $t5, $t2, planet_next_row
+    addu $t7, $t1, $t5      # current_col = base col + j
 
-    # --- Compute dx = (current_col - center_col), dy = (current_row - center_row) ---
-    sub  $a0, $t7, $t8          # dx
-    sub  $a1, $t6, $t9          # dy
+    sub  $a0, $t7, $t8      # dx = current_col - center_col
+    sub  $a1, $t6, $t9      # dy = current_row - center_row
+    mul  $v1, $a0, $a0      # dx^2
+    mul  $t3, $a1, $a1      # dy^2 (overwrite $t3 temporarily)
+    addu $v1, $v1, $t3      # distance^2
+    li   $t3, 144          # radius^2 (12^2)
+    bgt  $v1, $t3, planet_skip_pixel
 
-    # --- Check distance^2 <= radius^2 (12^2 = 144) ---
-    # distance^2 = dx^2 + dy^2
-    mul  $v1, $a0, $a0          # dx^2 -> $v1
-    mul  $t3, $a1, $a1          # dy^2 -> $t3 (overwrites $t3 which had radius)
-    addu $v1, $v1, $t3          # v1 = dx^2 + dy^2
-    li   $t3, 144               # 12^2 = 144
-    bgt  $v1, $t3, planet_skip_pixel  # if outside circle, skip
+    sll  $v0, $a1, 1       # compute pattern: (2*dy + dx) >> 2
+    addu $v0, $v0, $a0
+    sra  $v0, $v0, 2
+    andi $v0, $v0, 3      # mod 4
 
-    # Inside circle -> compute swirl pattern
-    # swirl_value = (dx + 2*dy) >> 2
-    # Then pick color by swirl_value mod 4
-    sll  $v0, $a1, 1            # v0 = 2*dy
-    addu $v0, $v0, $a0          # v0 = (2*dy + dx)
-    sra  $v0, $v0, 2            # swirl_value = (dx + 2*dy) >> 2
-    andi $v0, $v0, 3            # swirl_value mod 4
-
-    # Use a small switch-like sequence to pick from 4 reds
     li   $t3, 0
     beq  $v0, $zero, pick_darkest
     li   $t3, 1
     beq  $v0, $t3, pick_dark
     li   $t3, 2
     beq  $v0, $t3, pick_mid
-    # else case -> pick_light
-
 pick_light:
     lw   $t3, light_red
     j    planet_set_pixel
-
 pick_mid:
     lw   $t3, mid_red
     j    planet_set_pixel
-
 pick_dark:
     lw   $t3, dark_red
     j    planet_set_pixel
-
 pick_darkest:
     lw   $t3, darkest_red
 
 planet_set_pixel:
-    # Framebuffer address = s0 + (row*512) + (col*4)
     mul  $v1, $t6, 512         # row offset in bytes
     sll  $a0, $t7, 2           # col offset = col*4
     addu $v1, $s0, $v1        # base + row offset
     addu $v1, $v1, $a0        # final pixel address
-    sw   $t3, 0($v1)          # store chosen color
+    sw   $t3, 0($v1)          # store chosen red color
 
 planet_skip_pixel:
     addi $t5, $t5, 1          # j++
     j    planet_col_loop
-
 planet_next_row:
     addi $t4, $t4, 1          # i++
     j    planet_row_loop
-
 planet_done:
 
-
-    
     ################################################################
-    # DRAW STATIC OBJECTS: PLANET, SUN, SPACESHIP, AND PLATFORMS
+    # DRAW EARTH-LIKE PLANET (TOP RIGHT, swirl pattern)
+    # - Bounding box: 24×24, Radius = 12
+    # - Base coordinates chosen so the planet appears in the top right.
     ################################################################
-    # Pink planet at (row=10, col=100)
-    li   $t4, 10
-    li   $t5, 100
-    mul  $t6, $t4, 512
-    mul  $t7, $t5, 4
-    add  $t8, $s0, $t6
-    add  $t8, $t8, $t7
-    sw   $s7, 0($t8)
+    li   $t0, 2         # earth planet base row
+    li   $t1, 102       # earth planet base col (fits in 128 cols)
+    li   $t2, 24        # bounding box size
+    li   $t3, 12        # radius
+    addu $t8, $t1, $t3  # center_col = base col + 12
+    addu $t9, $t0, $t3  # center_row = base row + 12
 
-    # Sun at (row=5, col=10)
-    li   $t4, 5
-    li   $t5, 10
-    mul  $t6, $t4, 512
-    mul  $t7, $t5, 4
-    add  $t8, $s0, $t6
-    add  $t8, $t8, $t7
-    sw   $s6, 0($t8)
+    li   $t4, 0         # Outer loop counter (i) for earth planet
+earth_row_loop:
+    bge  $t4, $t2, earth_done
+    addu $t6, $t0, $t4      # current_row = earth base row + i
+    li   $t5, 0           # Inner loop counter (j)
+earth_col_loop:
+    bge  $t5, $t2, earth_next_row
+    addu $t7, $t1, $t5      # current_col = earth base col + j
 
-    # Spaceship (3 units wide) at (row=25, col=50)
-    li   $t4, 25
-    li   $t5, 50
-    # Load spaceship color from memory into $t3
-    lw   $t3, sp_color
-    li   $t9, 0                # loop counter for spaceship width
-ship_loop:
-    mul  $t6, $t4, 512
-    mul  $t7, $t5, 4
-    add  $t8, $s0, $t6
-    add  $t8, $t8, $t7
-    sw   $t3, 0($t8)           # draw spaceship pixel with green color
-    addi $t5, $t5, 1
-    addi $t9, $t9, 1
-    blt  $t9, 3, ship_loop
+    sub  $a0, $t7, $t8      # dx = current_col - center_col
+    sub  $a1, $t6, $t9      # dy = current_row - center_row
+    mul  $v1, $a0, $a0      # dx^2
+    mul  $t3, $a1, $a1      # dy^2 (temporary overwrite of $t3)
+    addu $v1, $v1, $t3      # distance^2
+    li   $t3, 144          # 12^2 = 144
+    bgt  $v1, $t3, earth_skip_pixel
 
-    # Floor: Draw bottom row (row 63) across all 128 columns
-    li   $t4, 63          # Floor row (0-indexed: 0..63)
+    sll  $v0, $a1, 1       # pattern: (2*dy + dx) >> 2
+    addu $v0, $v0, $a0
+    sra  $v0, $v0, 2
+    andi $v0, $v0, 3      # mod 4
+
+    li   $t3, 0
+    beq  $v0, $zero, pick_earth_dark
+    li   $t3, 1
+    beq  $v0, $t3, pick_earth_ocean
+    li   $t3, 2
+    beq  $v0, $t3, pick_earth_land
+    # Else: pick clouds
+pick_earth_clouds:
+    lw   $t3, earth_clouds
+    j    earth_set_pixel
+pick_earth_land:
+    lw   $t3, earth_land
+    j    earth_set_pixel
+pick_earth_ocean:
+    lw   $t3, earth_ocean
+    j    earth_set_pixel
+pick_earth_dark:
+    lw   $t3, earth_dark
+
+earth_set_pixel:
+    mul  $v1, $t6, 512      # row offset in bytes
+    sll  $a0, $t7, 2        # col offset in bytes
+    addu $v1, $s0, $v1      # add base address
+    addu $v1, $v1, $a0      # final pixel address
+    sw   $t3, 0($v1)        # store chosen earth color
+
+earth_skip_pixel:
+    addi $t5, $t5, 1       # j++
+    j    earth_col_loop
+earth_next_row:
+    addi $t4, $t4, 1       # i++
+    j    earth_row_loop
+earth_done:
+
+    ################################################################
+    # DRAW PLATFORMS
+    ################################################################
+    # Floor: Draw bottom row (row 63)
+    li   $t4, 63          # Floor row
     li   $t5, 0
 floor_loop:
     mul  $t6, $t4, 512
     mul  $t7, $t5, 4
     add  $t8, $s0, $t6
     add  $t8, $t8, $t7
-    sw   $t1, 0($t8)      # platform pixel (grey)
+    sw   $s1, 0($t8)      # platform pixel (grey)
     addi $t5, $t5, 1
     blt  $t5, 128, floor_loop
 
-    # Platform 1: row 40, columns 20 to 40
+    # Platform 1: row 40, cols 20–40
     li   $t4, 40
     li   $t5, 20
 plat1_loop:
@@ -250,7 +244,7 @@ plat1_loop:
     addi $t5, $t5, 1
     blt  $t5, 41, plat1_loop
 
-    # Platform 2: row 30, columns 70 to 100
+    # Platform 2: row 30, cols 70–100
     li   $t4, 30
     li   $t5, 70
 plat2_loop:
@@ -263,18 +257,13 @@ plat2_loop:
     blt  $t5, 101, plat2_loop
 
     ################################################################
-    # INIT PREVIOUS PLAYER POSITION (for erase/restore)
+    # INIT PREVIOUS PLAYER POSITION
     ################################################################
-    li   $s6, 60        # previous row
-    li   $s7, 2         # previous col
+    li   $s6, 60
+    li   $s7, 2
 
 ######################################################################
 # MAIN GAME LOOP
-# Each frame:
-#  (a) Restore the old 3x3 region from the previous player position,
-#  (b) Process input and gravity,
-#  (c) Save the new 3x3 background region into the buffer,
-#  (d) Draw the player, then update the saved position.
 ######################################################################
 game_loop:
     ################################################################
@@ -294,41 +283,39 @@ skip_input:
 
     ################################################################
     # 2) Restore Old Player Background from Buffer
-    # Use the saved 3x3 region from the previous frame.
     ################################################################
-    la   $t3, player_bg_buffer   # load address of player_bg_buffer into $t3
-    li   $t8, 0                  # row offset within block (0 to 2)
+    la   $t3, player_bg_buffer
+    li   $t8, 0
 restore_bg_loop_rows:
-    li   $t9, 0                  # col offset within block (0 to 2)
+    li   $t9, 0
 restore_bg_loop_cols:
-    add  $t4, $s6, $t8           # absolute row = previous row + offset
-    add  $t5, $s7, $t9           # absolute col = previous col + offset
-    mul  $t6, $t4, 512           # row offset in bytes
-    mul  $t7, $t5, 4             # col offset in bytes
-    add  $t0, $s0, $t6           # final address base
-    add  $t0, $t0, $t7           # final pixel address
-    lw   $t1, 0($t3)            # load pixel from buffer
-    sw   $t1, 0($t0)            # restore pixel
-    addi $t3, $t3, 4            # advance buffer pointer
+    add  $t4, $s6, $t8
+    add  $t5, $s7, $t9
+    mul  $t6, $t4, 512
+    mul  $t7, $t5, 4
+    add  $t0, $s0, $t6
+    add  $t0, $t0, $t7
+    lw   $t1, 0($t3)
+    sw   $t1, 0($t0)
+    addi $t3, $t3, 4
     addi $t9, $t9, 1
     blt  $t9, 3, restore_bg_loop_cols
     addi $t8, $t8, 1
     blt  $t8, 3, restore_bg_loop_rows
 
     ################################################################
-    # 3) Apply Gravity (update player_row)
+    # 3) Apply Gravity
     ################################################################
     jal  apply_gravity
 
     ################################################################
-    # 4) Load & Clamp New Player Position
+    # 4) Clamp & Save New Player Position
     ################################################################
     la   $t0, player_row
     la   $t1, player_col
-    lw   $t4, 0($t0)             # new player row
-    lw   $t5, 0($t1)             # new player col
+    lw   $t4, 0($t0)
+    lw   $t5, 0($t1)
 
-    # Clamp player row between 0 and 61 (to keep 3x3 sprite fully onscreen)
     li   $t6, 0
     blt  $t4, $t6, fix_top
     li   $t6, 61
@@ -343,7 +330,6 @@ fix_bottom:
     sw   $t4, player_row
 skip_row_clamp:
 
-    # Clamp player col between 0 and 125 (128-3=125)
     li   $t6, 0
     blt  $t5, $t6, fix_left
     li   $t6, 125
@@ -357,75 +343,71 @@ fix_right:
     li   $t5, 125
     sw   $t5, player_col
 skip_col_clamp:
-    lw   $t5, 0($t1)             # reload clamped col
 
-    # Save base player position into temporary memory
+    lw   $t5, 0($t1)
     la   $t7, current_player_row
     sw   $t4, 0($t7)
     la   $t7, current_player_col
     sw   $t5, 0($t7)
 
     ################################################################
-    # 5) Save New Player Background into Buffer
-    # Copy the 3x3 region from the new player's position.
+    # 5) Save New Background into Buffer
     ################################################################
-    la   $t3, player_bg_buffer   # reset buffer pointer into $t3
-    li   $t8, 0                  # outer loop: row offset = 0
+    la   $t3, player_bg_buffer
+    li   $t8, 0
 save_bg_loop_rows:
-    # Load current base row and col for this outer loop iteration
     la   $t7, current_player_row
-    lw   $t5, 0($t7)             # $t5 = base row
+    lw   $t5, 0($t7)
     la   $t7, current_player_col
-    lw   $t6, 0($t7)             # $t6 = base col
-    li   $t9, 0                  # inner loop: col offset = 0
+    lw   $t6, 0($t7)
+    li   $t9, 0
 save_bg_loop_cols:
-    add  $t2, $t5, $t8           # computed row = base row + row offset
-    add  $t1, $t6, $t9           # computed col = base col + col offset
-    mul  $t2, $t2, 512           # row offset in bytes
-    mul  $t1, $t1, 4             # col offset in bytes
-    add  $t0, $s0, $t2           # framebuffer base + row offset
-    add  $t0, $t0, $t1           # final pixel address
-    lw   $t4, 0($t0)            # read pixel from framebuffer
-    sw   $t4, 0($t3)            # store pixel into buffer
-    addi $t3, $t3, 4            # advance buffer pointer
+    add  $t2, $t5, $t8
+    add  $t1, $t6, $t9
+    mul  $t2, $t2, 512
+    mul  $t1, $t1, 4
+    add  $t0, $s0, $t2
+    add  $t0, $t0, $t1
+    lw   $t4, 0($t0)
+    sw   $t4, 0($t3)
+    addi $t3, $t3, 4
     addi $t9, $t9, 1
     blt  $t9, 3, save_bg_loop_cols
     addi $t8, $t8, 1
     blt  $t8, 3, save_bg_loop_rows
 
     ################################################################
-    # 6) Draw 3x3 Player Block at New Position
+    # 6) Draw Player at New Position
     ################################################################
-    li   $t8, 0                  # outer loop: row offset = 0
+    li   $t8, 0
 draw_loop_rows:
-    # Load current base row and col for this outer loop iteration
     la   $t7, current_player_row
-    lw   $t5, 0($t7)             # $t5 = base row
+    lw   $t5, 0($t7)
     la   $t7, current_player_col
-    lw   $t6, 0($t7)             # $t6 = base col
-    li   $t9, 0                  # inner loop: col offset = 0
+    lw   $t6, 0($t7)
+    li   $t9, 0
 draw_loop_cols:
-    add  $t2, $t5, $t8           # computed row = base row + row offset
-    add  $t1, $t6, $t9           # computed col = base col + col offset
-    mul  $t2, $t2, 512           # row offset in bytes
-    mul  $t1, $t1, 4             # col offset in bytes
-    add  $t0, $s0, $t2           # framebuffer base + row offset
-    add  $t0, $t0, $t1           # final pixel address
-    sw   $s2, 0($t0)            # draw player pixel (red)
+    add  $t2, $t5, $t8
+    add  $t1, $t6, $t9
+    mul  $t2, $t2, 512
+    mul  $t1, $t1, 4
+    add  $t0, $s0, $t2
+    add  $t0, $t0, $t1
+    sw   $s2, 0($t0)
     addi $t9, $t9, 1
     blt  $t9, 3, draw_loop_cols
     addi $t8, $t8, 1
     blt  $t8, 3, draw_loop_rows
 
     ################################################################
-    # 7) Update Previous Player Position for Next Frame
+    # 7) Update Previous Player Position
     ################################################################
     la   $t7, current_player_row
     lw   $t4, 0($t7)
-    move $s6, $t4              # new row becomes previous row
+    move $s6, $t4
     la   $t7, current_player_col
     lw   $t4, 0($t7)
-    move $s7, $t4              # new col becomes previous col
+    move $s7, $t4
 
     ################################################################
     # 8) Frame Delay
@@ -434,42 +416,42 @@ draw_loop_cols:
     li   $a0, 40
     syscall
 
-    j    game_loop
+    j game_loop
 
 ######################################################################
 # INPUT HANDLERS
 ######################################################################
 move_left:
     lw   $t4, player_col
-    li   $t5, 2              # do not move left if too near edge
+    li   $t5, 2
     ble  $t4, $t5, done_moving
     addi $t4, $t4, -1
     sw   $t4, player_col
 done_moving:
-    j    skip_input
+    j skip_input
 
 move_right:
     lw   $t4, player_col
-    li   $t5, 125           # maximum safe base_col
+    li   $t5, 125
     bge  $t4, $t5, done_moving2
     addi $t4, $t4, 1
     sw   $t4, player_col
 done_moving2:
-    j    skip_input
+    j skip_input
 
 try_jump:
     la   $t0, is_jumping
     lw   $t1, 0($t0)
-    bnez $t1, game_loop       # skip if already jumping/falling
+    bnez $t1, game_loop
     li   $t1, 1
     sw   $t1, 0($t0)
     la   $t2, player_velocity
-    li   $t3, -5             # jump force (negative Y velocity)
+    li   $t3, -5
     sw   $t3, 0($t2)
-    j    skip_input
+    j skip_input
 
 ######################################################################
-# GRAVITY & JUMP PHYSICS ENGINE
+# GRAVITY ENGINE
 ######################################################################
 apply_gravity:
     la   $t0, is_jumping
@@ -479,7 +461,7 @@ apply_gravity:
     la   $t4, player_velocity
     lw   $t5, 0($t4)
     bnez $t1, apply_physics
-    li   $t6, 61            # maximum allowed top row for player sprite
+    li   $t6, 61
     beq  $t3, $t6, done_gravity
     li   $t1, 1
     sw   $t1, 0($t0)
@@ -488,27 +470,26 @@ apply_gravity:
     j    apply_physics
 
 apply_physics:
-    add  $t3, $t3, $t5       # new player row = old row + velocity
-    bgt  $t3, 61, set_floor  # if new row exceeds 61, clamp to floor
+    add  $t3, $t3, $t5
+    bgt  $t3, 61, set_floor
     sw   $t3, 0($t2)
     addi $t5, $t5, 1
     sw   $t5, 0($t4)
     j    done_gravity
 
 set_floor:
-    li   $t3, 61            # clamp to maximum allowed top row
+    li   $t3, 61
     sw   $t3, 0($t2)
     li   $t5, 0
     sw   $t5, 0($t4)
     li   $t1, 0
     sw   $t1, 0($t0)
-    j    done_gravity
-
 done_gravity:
     jr   $ra
 
 ######################################################################
-# SAFEGUARD HALT (fallback loop)
+# SAFEGUARD HALT LOOP
 ######################################################################
 end:
-    j    end
+    j end
+   
