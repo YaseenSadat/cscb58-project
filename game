@@ -660,29 +660,104 @@ enemy_save_bg_loop_cols:
     blt  $t1, 4, enemy_save_bg_loop_rows
 
     ################################################################
-    # 7.4) Draw Enemy Sprite (4×4 green block)
+    # 7.4) Draw Enemy Sprite (4×4 green block with black eyes)
     ################################################################
-    la   $t5, enemy_row         # load enemy_row address
-    lw   $t6, 0($t5)            # enemy's base row (should be 20)
-    la   $t7, enemy_col         # load enemy_col address
-    lw   $t8, 0($t7)            # enemy's base col
-    li   $t9, 0x00008000        # green color (or adjust as needed)
-    li   $t0, 0                 # row offset (0..3)
-enemy_draw_loop_rows:
-    li   $t1, 0                 # column offset (0..3)
-enemy_draw_loop_cols:
-    add  $t2, $t6, $t0          # current row = enemy_row + row offset
-    add  $t3, $t8, $t1          # current col = enemy_col + col offset
-    mul  $t2, $t2, 512          # convert row to byte offset
-    mul  $t3, $t3, 4            # convert col to byte offset
-    add  $t4, $s0, $t2          # framebuffer address = base + row offset
-    add  $t4, $t4, $t3          # add column offset
-    sw   $t9, 0($t4)            # draw the green pixel
-    addi $t1, $t1, 1
-    blt  $t1, 4, enemy_draw_loop_cols
-    addi $t0, $t0, 1
-    blt  $t0, 4, enemy_draw_loop_rows
+    # Load enemy base positions.
+    la   $t0, enemy_row         # pointer to enemy_row
+    lw   $t1, 0($t0)            # enemy's base row -> $t1
+    la   $t0, enemy_col         # pointer to enemy_col (reuse $t0)
+    lw   $t2, 0($t0)            # enemy's base col -> $t2
 
+    # Load color constants.
+    li   $t7, 0x00008000        # green color for enemy body (in $t7)
+    li   $t8, 0x00000000        # black color for eyes (in $t8)
+
+    # Set up constant registers (using saved registers $s4 and $s5).
+    addi $s4, $zero, 1         # $s4 = 1
+    addi $s5, $zero, 3         # $s5 = 3
+
+    # Initialize row offset in $t3.
+    addi $t3, $zero, 0         # row offset = 0
+enemy_draw_loop_rows:
+    bge  $t3, 4, enemy_draw_done_rows  # if row offset >= 4, exit loop
+
+    # Initialize column offset in $t4.
+    addi $t4, $zero, 0         # column offset = 0
+enemy_draw_loop_cols:
+    bge  $t4, 4, enemy_next_row   # if column offset >= 4, move to next row
+
+    # Compute current pixel's absolute address:
+    add  $t9, $t1, $t3        # current row = enemy base row ($t1) + row offset ($t3)
+    mul  $t9, $t9, 512        # multiply by 512 to get byte offset for the row
+    add  $t5, $t2, $t4        # current col = enemy base col ($t2) + col offset ($t4)
+    mul  $t5, $t5, 4          # multiply by 4 to get byte offset for the column
+    add  $t6, $s0, $t9        # $s0 is the framebuffer base; add row offset
+    add  $t6, $t6, $t5        # add column offset to get final pixel address
+
+    # For the enemy's second row (relative row 1) we want black eyes at col offset 1 and 3.
+    beq  $t3, $s4, enemy_eye_row_check  # if row offset equals 1, branch to eye check
+    # Otherwise, draw green.
+    sw   $t7, 0($t6)
+    j    enemy_next_pixel_label
+
+enemy_eye_row_check:
+    # Check if the current column offset equals 1 or equals 3.
+    beq  $t4, $s4, enemy_draw_black   # if col offset equals 1, draw black
+    beq  $t4, $s5, enemy_draw_black   # if col offset equals 3, draw black
+    # Otherwise, draw green.
+    sw   $t7, 0($t6)
+    j    enemy_next_pixel_label
+
+enemy_draw_black:
+    sw   $t8, 0($t6)         # draw black pixel for an eye
+
+enemy_next_pixel_label:
+    addi $t4, $t4, 1         # increment column offset
+    j    enemy_draw_loop_cols
+
+enemy_next_row:
+    addi $t3, $t3, 1         # increment row offset
+    j    enemy_draw_loop_rows
+
+enemy_draw_done_rows:
+
+
+
+    # -------------------------------
+    # Collision Check: Player vs. Enemy
+    # -------------------------------
+    # Load player's top-left coordinates.
+    la   $t0, player_row      # pointer to player_row
+    lw   $t1, 0($t0)          # player's top row
+    la   $t2, player_col      # pointer to player_col
+    lw   $t3, 0($t2)          # player's left col
+
+    # Load enemy's top-left coordinates.
+    la   $t4, enemy_row       # pointer to enemy_row
+    lw   $t5, 0($t4)          # enemy's top row
+    la   $t6, enemy_col       # pointer to enemy_col
+    lw   $t7, 0($t6)          # enemy's left col
+
+    # Check if player's bottom (player_row+3) is above enemy's top.
+    addi $t8, $t1, 3          # player's bottom row
+    blt  $t8, $t5, no_enemy_collision  # if player's bottom < enemy's top, no collision
+
+    # Check if player's top is below enemy's bottom (enemy_row+3).
+    addi $t8, $t5, 3          # enemy's bottom row
+    bgt  $t1, $t8, no_enemy_collision  # if player's top > enemy's bottom, no collision
+
+    # Check if player's right (player_col+3) is left of enemy's left.
+    addi $t8, $t3, 3          # player's right col
+    blt  $t8, $t7, no_enemy_collision  # if player's right < enemy's left, no collision
+
+    # Check if player's left is right of enemy's right (enemy_col+3).
+    addi $t8, $t7, 3          # enemy's right col
+    bgt  $t3, $t8, no_enemy_collision  # if player's left > enemy's right, no collision
+
+    # If none of the above, a collision is detected.
+    j go_to_start_screen
+
+no_enemy_collision:
 
 
     ################################################################
