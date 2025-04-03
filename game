@@ -54,6 +54,11 @@ player_bg_buffer: .space 64
 move_delay_counter: .word 0    # Countdown counter to control repeat movement
 move_delay_value:   .word 2    # Delay constant (adjust for speed)
 
+# Enemy variables:
+    enemy_row:        .word 20      # Enemy is fixed on row 20
+    enemy_col:        .word 0       # Starting column for enemy
+    enemy_velocity:   .word 2       # Horizontal speed (in pixels per frame)
+    enemy_bg_buffer:  .space 64     # 4x4 background for enemy (16 words, 64 bytes)
 # Multi-shade reds for a more detailed red planet (top left)
 darkest_red:   .word 0x008B0000   # Dark red
 dark_red:      .word 0x00B22222   # Firebrick
@@ -584,6 +589,101 @@ store_pixel:
     la   $t7, current_player_col
     lw   $t4, 0($t7)
     move $s7, $t4
+  
+    ################################################################
+    # 7.1) Restore Old Enemy Background (4×4 region) from enemy_bg_buffer
+    ################################################################
+    la   $t0, enemy_bg_buffer    # pointer to enemy bg buffer
+    li   $t1, 0                  # row offset index (0..3)
+enemy_restore_bg_loop_rows:
+    li   $t2, 0                  # column offset index (0..3)
+enemy_restore_bg_loop_cols:
+    # Compute current enemy pixel address:
+    la   $t3, enemy_row         # load enemy_row address
+    lw   $t4, 0($t3)            # enemy's base row
+    add  $t4, $t4, $t1          # current row = enemy_row + row offset
+    la   $t5, enemy_col         # load enemy_col address
+    lw   $t6, 0($t5)            # enemy's base col
+    add  $t6, $t6, $t2          # current col = enemy_col + col offset
+    mul  $t4, $t4, 512          # row offset (bytes)
+    mul  $t6, $t6, 4            # col offset (bytes)
+    add  $t7, $s0, $t4          # base address + row offset
+    add  $t7, $t7, $t6          # final pixel address for enemy region
+    lw   $t8, 0($t0)            # get stored pixel from enemy_bg_buffer
+    sw   $t8, 0($t7)            # restore that pixel into the framebuffer
+    addi $t0, $t0, 4            # advance enemy_bg_buffer pointer
+    addi $t2, $t2, 1
+    blt  $t2, 4, enemy_restore_bg_loop_cols
+    li   $t2, 0                 # reset col offset for next row
+    addi $t1, $t1, 1
+    blt  $t1, 4, enemy_restore_bg_loop_rows
+
+    ################################################################
+    # 7.2) Update Enemy Position (Horizontal move)
+    ################################################################
+    la   $t0, enemy_col         # load enemy_col address
+    lw   $t1, 0($t0)            # get current enemy col
+    la   $t2, enemy_velocity    # load enemy_velocity address
+    lw   $t3, 0($t2)            # get enemy horizontal speed
+    add  $t1, $t1, $t3          # new enemy col = old + velocity
+    li   $t4, 124              # right boundary (for 4×4 sprite)
+    ble  $t1, $t4, enemy_update_done
+    li   $t1, 0                # if beyond boundary, wrap to left
+enemy_update_done:
+    sw   $t1, 0($t0)           # store updated enemy col
+
+    ################################################################
+    # 7.3) Save New Enemy Background into enemy_bg_buffer
+    # (Capture the 4×4 area at the enemy's new position)
+    ################################################################
+    la   $t0, enemy_bg_buffer   # reset pointer for enemy bg buffer
+    li   $t1, 0                 # row offset index (0..3)
+enemy_save_bg_loop_rows:
+    li   $t2, 0                 # column offset index (0..3)
+enemy_save_bg_loop_cols:
+    la   $t3, enemy_row         # load enemy_row address
+    lw   $t4, 0($t3)            # enemy's base row
+    add  $t4, $t4, $t1          # current row = enemy_row + row offset
+    la   $t5, enemy_col         # load enemy_col address
+    lw   $t6, 0($t5)            # enemy's base col
+    add  $t6, $t6, $t2          # current col = enemy_col + col offset
+    mul  $t4, $t4, 512          # row offset (bytes)
+    mul  $t6, $t6, 4            # col offset (bytes)
+    add  $t7, $s0, $t4          # base address + row offset
+    add  $t7, $t7, $t6          # final pixel address in framebuffer
+    lw   $t8, 0($t7)            # read current pixel from framebuffer
+    sw   $t8, 0($t0)            # save pixel into enemy_bg_buffer
+    addi $t0, $t0, 4            # advance enemy_bg_buffer pointer
+    addi $t2, $t2, 1
+    blt  $t2, 4, enemy_save_bg_loop_cols
+    addi $t1, $t1, 1
+    blt  $t1, 4, enemy_save_bg_loop_rows
+
+    ################################################################
+    # 7.4) Draw Enemy Sprite (4×4 green block)
+    ################################################################
+    la   $t5, enemy_row         # load enemy_row address
+    lw   $t6, 0($t5)            # enemy's base row (should be 20)
+    la   $t7, enemy_col         # load enemy_col address
+    lw   $t8, 0($t7)            # enemy's base col
+    li   $t9, 0x00008000        # green color (or adjust as needed)
+    li   $t0, 0                 # row offset (0..3)
+enemy_draw_loop_rows:
+    li   $t1, 0                 # column offset (0..3)
+enemy_draw_loop_cols:
+    add  $t2, $t6, $t0          # current row = enemy_row + row offset
+    add  $t3, $t8, $t1          # current col = enemy_col + col offset
+    mul  $t2, $t2, 512          # convert row to byte offset
+    mul  $t3, $t3, 4            # convert col to byte offset
+    add  $t4, $s0, $t2          # framebuffer address = base + row offset
+    add  $t4, $t4, $t3          # add column offset
+    sw   $t9, 0($t4)            # draw the green pixel
+    addi $t1, $t1, 1
+    blt  $t1, 4, enemy_draw_loop_cols
+    addi $t0, $t0, 1
+    blt  $t0, 4, enemy_draw_loop_rows
+
+
 
     ################################################################
     # 8) Frame Delay
