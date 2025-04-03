@@ -78,6 +78,12 @@ earth_clouds:  .word 0x00FFFFFF   # Clouds (white)
 .text
 main:
     ################################################################
+    # START SCREEN
+    ################################################################
+    jal start_screen       # Call the start screen subroutine
+
+main_game_loop:
+    ################################################################
     # INITIALIZE CONSTANTS
     ################################################################
     li   $s0, BASE_ADDRESS        # Framebuffer base address
@@ -241,7 +247,7 @@ planet_done:
     ################################################################
     # DRAW EARTH-LIKE PLANET (TOP RIGHT, swirl pattern)
     ################################################################
-    li   $t0, 2         # earth planet base row
+    li   $t0, 12         # earth planet base row
     li   $t1, 102       # earth planet base col
     li   $t2, 24        # bounding box size
     li   $t3, 12        # radius
@@ -326,9 +332,9 @@ platB_loop:
     addi $t5, $t5, 1
     blt  $t5, 71, platB_loop
 
-# Platform C: row 30, columns 90 to 115
+# Platform C: row 30, columns 80 to 105
 li $t4, 30
-li $t5, 90
+li $t5, 80
 platC_loop:
     mul $t6, $t4, 512
     mul $t7, $t5, 4
@@ -336,7 +342,7 @@ platC_loop:
     add $t8, $t8, $t7
     sw  $t9, 0($t8)
     addi $t5, $t5, 1
-    blt  $t5, 116, platC_loop
+    blt  $t5, 106, platC_loop
 
 # Platform D: row 25, columns 20 to 45
 li $t4, 25
@@ -390,6 +396,20 @@ game_loop:
     beq  $t3, $t4, move_right
     li   $t4, 119             # 'w'
     beq  $t3, $t4, try_jump
+
+go_to_start_screen:
+    jal start_screen      # Go to start screen
+    # After returning from start screen, reset state:
+    li   $t0, 60          # initial player_row
+    sw   $t0, player_row
+    li   $t0, 2           # initial player_col
+    sw   $t0, player_col
+    li   $t0, 0           # reset player_velocity
+    sw   $t0, player_velocity
+    li   $t0, 0           # reset is_jumping
+    sw   $t0, is_jumping
+    j game_loop           # Jump back into the game loop
+
 
 decrement_delay:
     lw   $t2, move_delay_counter
@@ -591,7 +611,6 @@ done_moving:
     sw   $t7, move_delay_counter
     j skip_input
 
-
 move_right:
     lw   $t4, player_col
     li   $t5, 124
@@ -605,7 +624,6 @@ done_moving2:
     lw   $t7, move_delay_value
     sw   $t7, move_delay_counter
     j skip_input
-
 
 try_jump:
     la   $t0, is_jumping
@@ -704,9 +722,9 @@ check_platform_C:
     bnez $s5, check_platform_D
     lw   $s6, player_col
     addi $t8, $s6, 3
-    li   $s7, 116
+    li   $s7, 106
     bge  $s6, $s7, check_platform_D
-    li   $s7, 90
+    li   $s7, 80
     blt  $t8, $s7, check_platform_D
     li   $t3, 26
     sw   $t3, player_row
@@ -805,9 +823,9 @@ check_upward_C:
 check_horizontal_up_C:
     lw   $s6, player_col
     addi $t8, $s6, 3
-    li   $s7, 116
+    li   $s7, 106
     bge  $s6, $s7, check_upward_D
-    li   $s7, 90
+    li   $s7, 80
     blt  $t8, $s7, check_upward_D
     # Upward collision detected for Platform C: clamp player's row to 31
     li   $t3, 31
@@ -881,3 +899,767 @@ set_floor:
 
 end:
     j end
+
+########################################################################
+# START SCREEN SUBROUTINE
+########################################################################
+start_screen:
+    # Clear the display (64 rows x 128 cols) with dark blue ($s3)
+    li   $s0, BASE_ADDRESS    # Ensure $s0 is set to the base address
+    li   $s3, 0x00000080      # Dark blue background
+    li   $t4, 0               # row counter (0 .. 63)
+start_bg_row_loop:
+    li   $t5, 0               # col counter (0 .. 127)
+start_bg_col_loop:
+    mul  $t6, $t4, 512        # compute row offset in bytes
+    mul  $t7, $t5, 4          # compute col offset in bytes
+    add  $t8, $s0, $t6        # base address + row offset
+    add  $t8, $t8, $t7        # + col offset
+    sw   $s3, 0($t8)          # set pixel to dark blue
+    addi $t5, $t5, 1
+    blt  $t5, 128, start_bg_col_loop
+    addi $t4, $t4, 1
+    blt  $t4, 64, start_bg_row_loop
+
+# "START" title: shifted 15 columns right and 20 rows down (35 down - 15 up = net 20 rows)
+
+# ========== Big "S" ==========
+li   $t9, 0x00FFFFFF
+li   $t0, 40              # row
+li   $t1, 45              # col
+
+li   $t2, 0
+S_top_loop:
+    bge  $t2, 8, S_top_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    S_top_loop
+S_top_done:
+
+li   $t0, 41
+S_upper_vert:
+    bgt  $t0, 44, S_upper_vert_done
+    mul  $t4, $t0, 512
+    mul  $t5, $t1, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    S_upper_vert
+S_upper_vert_done:
+
+li   $t0, 45
+li   $t2, 0
+S_mid_loop:
+    bge  $t2, 8, S_mid_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    S_mid_loop
+S_mid_done:
+
+li   $t0, 46
+li   $t1, 52
+S_lower_vert:
+    bgt  $t0, 50, S_lower_vert_done
+    mul  $t4, $t0, 512
+    mul  $t5, $t1, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    S_lower_vert
+S_lower_vert_done:
+
+li   $t0, 51
+li   $t1, 45
+li   $t2, 0
+S_bottom_loop:
+    bge  $t2, 8, S_bottom_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    S_bottom_loop
+S_bottom_done:
+
+# ========== Big "T" ==========
+li   $t0, 40
+li   $t1, 55
+li   $t2, 0
+T_top_loop:
+    bge  $t2, 8, T_top_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    T_top_loop
+T_top_done:
+
+li   $t7, 3
+add  $t8, $t1, $t7        # center col = 58
+li   $t0, 41
+T_vert_loop:
+    bgt  $t0, 51, T_vert_done
+    mul  $t4, $t0, 512
+    mul  $t5, $t8, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    T_vert_loop
+T_vert_done:
+
+# ========== Big "A" ==========
+li   $t0, 40
+li   $t1, 65
+li   $t2, 0
+A_top_loop:
+    bge  $t2, 8, A_top_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    A_top_loop
+A_top_done:
+
+li   $t0, 41
+A_left_vert:
+    bgt  $t0, 51, A_left_done
+    mul  $t4, $t0, 512
+    li   $t7, 65
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    A_left_vert
+A_left_done:
+
+li   $t0, 41
+A_right_vert:
+    bgt  $t0, 51, A_right_done
+    mul  $t4, $t0, 512
+    li   $t7, 72
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    A_right_vert
+A_right_done:
+
+li   $t0, 46
+li   $t2, 0
+A_cross_loop:
+    bge  $t2, 8, A_cross_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    A_cross_loop
+A_cross_done:
+
+# ========== Big "R" ==========
+li   $t0, 40
+li   $t1, 75
+li   $t2, 0
+R_top_loop:
+    bge  $t2, 6, R_top_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    R_top_loop
+R_top_done:
+
+li   $t0, 40
+R_left_vert:
+    bgt  $t0, 51, R_left_done
+    mul  $t4, $t0, 512
+    mul  $t5, $t1, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    R_left_vert
+R_left_done:
+
+li   $t0, 41
+li   $t7, 81
+R_top_right_vert:
+    bgt  $t0, 44, R_top_right_done
+    mul  $t4, $t0, 512
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    R_top_right_vert
+R_top_right_done:
+
+li   $t0, 45
+li   $t2, 0
+R_cross_loop:
+    bge  $t2, 6, R_cross_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    R_cross_loop
+R_cross_done:
+
+li   $t0, 46
+li   $t7, 81
+R_bottom_leg:
+    bgt  $t0, 51, R_bottom_done
+    mul  $t4, $t0, 512
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    R_bottom_leg
+R_bottom_done:
+
+# ========== Final "T" ==========
+li   $t0, 40
+li   $t1, 85
+li   $t2, 0
+T2_top_loop:
+    bge  $t2, 8, T2_top_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    T2_top_loop
+T2_top_done:
+
+li   $t7, 3
+add  $t8, $t1, $t7      # 85 + 3 = 88
+li   $t0, 41
+T2_vert_loop:
+    bgt  $t0, 51, T2_vert_done
+    mul  $t4, $t0, 512
+    mul  $t5, $t8, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    T2_vert_loop
+T2_vert_done:
+
+# Draw white 3D cube at row 15, col 33 (above START and 30 cols right of original)
+li $t9, 0x00FFFFFF          # White color
+
+# -----------------------------
+# Front face square (15,33)
+# -----------------------------
+# Top horizontal
+li $t0, 15                  # row
+li $t1, 33                  # col start
+li $t2, 0
+CubeFront_top:
+    bge $t2, 10, CubeFront_top_done
+    add $t3, $t1, $t2
+    mul $t4, $t0, 512
+    mul $t5, $t3, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j CubeFront_top
+CubeFront_top_done:
+
+# Bottom horizontal
+li $t0, 24
+li $t2, 0
+CubeFront_bottom:
+    bge $t2, 10, CubeFront_bottom_done
+    add $t3, $t1, $t2
+    mul $t4, $t0, 512
+    mul $t5, $t3, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j CubeFront_bottom
+CubeFront_bottom_done:
+
+# Left vertical
+li $t0, 15
+li $t2, 0
+CubeFront_left:
+    bge $t2, 10, CubeFront_left_done
+    add $t3, $t0, $t2
+    mul $t4, $t3, 512
+    mul $t5, $t1, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j CubeFront_left
+CubeFront_left_done:
+
+# Right vertical
+li $t1, 42                 # 33 + 9
+li $t0, 15
+li $t2, 0
+CubeFront_right:
+    bge $t2, 10, CubeFront_right_done
+    add $t3, $t0, $t2
+    mul $t4, $t3, 512
+    mul $t5, $t1, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j CubeFront_right
+CubeFront_right_done:
+
+# -----------------------------
+# Back face square (18,37)
+# -----------------------------
+li $t0, 18
+li $t1, 37
+li $t2, 0
+CubeBack_top:
+    bge $t2, 10, CubeBack_top_done
+    add $t3, $t1, $t2
+    mul $t4, $t0, 512
+    mul $t5, $t3, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j CubeBack_top
+CubeBack_top_done:
+
+# Back bottom
+li $t0, 27
+li $t2, 0
+CubeBack_bottom:
+    bge $t2, 10, CubeBack_bottom_done
+    add $t3, $t1, $t2
+    mul $t4, $t0, 512
+    mul $t5, $t3, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j CubeBack_bottom
+CubeBack_bottom_done:
+
+# Back left vertical
+li $t0, 18
+li $t2, 0
+CubeBack_left:
+    bge $t2, 10, CubeBack_left_done
+    add $t3, $t0, $t2
+    mul $t4, $t3, 512
+    li  $t1, 37
+    mul $t5, $t1, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j CubeBack_left
+CubeBack_left_done:
+
+# Back right vertical
+li $t0, 18
+li $t2, 0
+CubeBack_right:
+    bge $t2, 10, CubeBack_right_done
+    add $t3, $t0, $t2
+    mul $t4, $t3, 512
+    li  $t1, 46              # 37 + 9
+    mul $t5, $t1, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j CubeBack_right
+CubeBack_right_done:
+
+# -----------------------------
+# Diagonal 1: top-left (15,33) -> (18,37)
+li $t2, 0
+CubeDiag1:
+    bge $t2, 4, CubeDiag1_done
+    addi $t3, $t2, 15
+    addi $t4, $t2, 33
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j CubeDiag1
+CubeDiag1_done:
+
+# Diagonal 2: top-right (15,42) -> (18,46)
+li $t2, 0
+CubeDiag2:
+    bge $t2, 4, CubeDiag2_done
+    addi $t3, $t2, 15
+    addi $t4, $t2, 42
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j CubeDiag2
+CubeDiag2_done:
+
+# Diagonal 3: bottom-left (24,33) -> (27,37)
+li $t2, 0
+CubeDiag3:
+    bge $t2, 4, CubeDiag3_done
+    addi $t3, $t2, 24
+    addi $t4, $t2, 33
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j CubeDiag3
+CubeDiag3_done:
+
+# Diagonal 4: bottom-right (24,42) -> (27,46)
+li $t2, 0
+CubeDiag4:
+    bge $t2, 4, CubeDiag4_done
+    addi $t3, $t2, 24
+    addi $t4, $t2, 42
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j CubeDiag4
+CubeDiag4_done:
+
+# -----------------------------
+# Draw W A R S beside the cube starting at row 15, col 50
+
+# ---- Draw W (row 15, col 50) ----
+li $t0, 15
+li $t1, 50
+li $t2, 0
+W_left:
+    bge $t2, 12, W_left_done
+    add $t3, $t0, $t2
+    mul $t4, $t3, 512
+    mul $t5, $t1, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j W_left
+W_left_done:
+
+li $t2, 0
+W_right:
+    bge $t2, 12, W_right_done
+    add $t3, $t0, $t2
+    li $t7, 57
+    mul $t4, $t3, 512
+    mul $t5, $t7, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j W_right
+W_right_done:
+
+# W diagonal left-to-center (row 25 to 27, cols 51 to 53)
+li $t2, 0
+W_diag_left:
+    bge $t2, 3, W_diag_left_done
+    addi $t3, $t2, 25      # row = 25 + t2
+    addi $t4, $t2, 54      # col = 51 + t2
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j W_diag_left
+W_diag_left_done:
+
+# W diagonal right-to-center (row 25 to 27, cols 56 to 54)
+li $t2, 0
+W_diag_right:
+    bge $t2, 3, W_diag_right_done
+    addi $t3, $t2, 25      # row = 25 + t2
+    li   $t4, 53
+    sub  $t4, $t4, $t2     # col = 56 - t2
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j W_diag_right
+W_diag_right_done:
+
+# ---- Draw A (row 15, col 60) ----
+li $t0, 15
+li $t1, 60
+li $t2, 0
+A_top_loop2:
+    bge $t2, 8, A_top_done2
+    add $t3, $t1, $t2
+    mul $t4, $t0, 512
+    mul $t5, $t3, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j A_top_loop2
+A_top_done2:
+
+li $t0, 16
+A_left_vert2:
+    bgt $t0, 26, A_left_done2
+    mul $t4, $t0, 512
+    li $t7, 60
+    mul $t5, $t7, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t0, $t0, 1
+    j A_left_vert2
+A_left_done2:
+
+li $t0, 16
+A_right_vert2:
+    bgt $t0, 26, A_right_done2
+    mul $t4, $t0, 512
+    li $t7, 67
+    mul $t5, $t7, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t0, $t0, 1
+    j A_right_vert2
+A_right_done2:
+
+li $t0, 21
+li $t2, 0
+A_cross2:
+    bge $t2, 8, A_cross_done2
+    add $t3, $t1, $t2
+    mul $t4, $t0, 512
+    mul $t5, $t3, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j A_cross2
+A_cross_done2:
+
+# ---- Draw R (row 15, col 70) ----
+li   $t0, 15
+li   $t1, 70
+li   $t2, 0
+R_top_loop1:
+    bge  $t2, 6, R_top_done1
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    R_top_loop1
+R_top_done1:
+
+li   $t0, 15
+R_left_vert1:
+    bgt  $t0, 26, R_left_done1
+    mul  $t4, $t0, 512
+    mul  $t5, $t1, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    R_left_vert1
+R_left_done1:
+
+li   $t0, 16
+li   $t7, 76
+R_top_right_vert1:
+    bgt  $t0, 19, R_top_right_done1
+    mul  $t4, $t0, 512
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    R_top_right_vert1
+R_top_right_done1:
+
+li   $t0, 20
+li   $t2, 0
+R_cross_loop1:
+    bge  $t2, 6, R_cross_done1
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    R_cross_loop1
+R_cross_done1:
+
+li   $t0, 21
+li   $t7, 76
+R_bottom_leg1:
+    bgt  $t0, 26, R_bottom_done1
+    mul  $t4, $t0, 512
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    R_bottom_leg1
+R_bottom_done1:
+
+# ---- Draw S (row 15, col 80) ----
+li $t0, 15
+li $t1, 80
+li $t2, 0
+S_top1:
+    bge $t2, 8, S_top_done1
+    add $t3, $t1, $t2
+    mul $t4, $t0, 512
+    mul $t5, $t3, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j S_top1
+S_top_done1:
+
+# Upper vertical (left side)
+li $t0, 16
+S_upper_vert1:
+    bgt $t0, 19, S_upper_vert_done1
+    mul $t4, $t0, 512
+    mul $t5, $t1, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t0, $t0, 1
+    j S_upper_vert1
+S_upper_vert_done1:
+
+# Middle horizontal
+li $t0, 20
+li $t2, 0
+S_mid1:
+    bge $t2, 8, S_mid_done1
+    add $t3, $t1, $t2
+    mul $t4, $t0, 512
+    mul $t5, $t3, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j S_mid1
+S_mid_done1:
+
+# Lower vertical (right side)
+li $t0, 21
+li $t7, 87
+S_lower_vert1:
+    bgt $t0, 24, S_lower_vert_done1
+    mul $t4, $t0, 512
+    mul $t5, $t7, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t0, $t0, 1
+    j S_lower_vert1
+S_lower_vert_done1:
+
+# Bottom horizontal
+li $t0, 25
+li $t1, 80
+li $t2, 0
+S_bottom1:
+    bge $t2, 8, S_bottom_done1
+    add $t3, $t1, $t2
+    mul $t4, $t0, 512
+    mul $t5, $t3, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j S_bottom1
+S_bottom_done1:
+
+
+start_input_loop:
+    li   $t0, 0xffff0000      # Keyboard MMIO base address
+wait_for_key:
+    lw   $t1, 0($t0)          # Read key status
+    beq  $t1, $zero, wait_for_key  # No key pressed, wait
+    lw   $t2, 4($t0)          # Read ASCII code of key pressed
+    li   $t3, 115             # ASCII for 's'
+    beq  $t2, $t3, start_game  # If 's' pressed, start the game
+    li   $t3, 113             # ASCII for 'q'
+    beq  $t2, $t3, restart_start_screen  # If 'q' pressed, restart the screen
+    j wait_for_key            # For any other key, keep waiting
+
+start_game:
+    jr $ra                    # Return to caller (main continues to main_game_loop)
+
+restart_start_screen:
+    # Clear key buffer
+    li   $t0, 0xffff0000
+clear_key_buffer:
+    lw   $t1, 0($t0)          # Read key status
+    beq  $t1, $zero, restart_start_screen_continue
+    lw   $t2, 4($t0)          # Read ASCII code to clear buffer
+    j    clear_key_buffer
+
+restart_start_screen_continue:
+    jal start_screen
+    j start_input_loop
