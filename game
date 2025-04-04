@@ -912,15 +912,18 @@ enemy_draw_done_rows:
     addi $t8, $t7, 3          # enemy's right col
     bgt  $t3, $t8, no_enemy_collision  # if player's left > enemy's right, no collision
 
-    # If none of the above, a collision is detected.
-        # Collision detected: lose one heart.
+    # Collision detected: lose one heart.
     la   $t0, hearts      # Load address of hearts
     lw   $t1, 0($t0)      # Load current heart count into $t1
     addi $t1, $t1, -1     # Decrement heart count by 1
     sw   $t1, 0($t0)      # Store the new heart count back
 
+    # Erase the corresponding heart from the display:
+    move $a0, $t1         # Use the new hearts count as the heart index to erase
+    jal  erase_heart
+
     blez $t1, game_over   # If hearts <= 0, then game over
-    j continue_game      # Otherwise, continue playing
+    j    continue_game    # Otherwise, continue playing
 
 game_over:
     li   $t0, 4          # Reset hearts count to 4 for a new game.
@@ -1252,6 +1255,48 @@ set_floor:
 
 end:
     j end
+
+erase_heart:
+    # Input: $a0 = heart index to erase (0 = leftmost; 3 = far right when starting with 4 hearts)
+    # Base coordinates for hearts (as drawn in your code):
+    #   Top row: 4
+    #   Left col of first heart: 98
+    #   Each heart occupies a 4x5 block and is spaced 7 columns apart.
+    
+    li   $t0, 98         # Base column for the first heart
+    li   $t1, 7          # Spacing increment per heart
+    mul  $t2, $a0, $t1   # t2 = heart index * 7
+    add  $t2, $t0, $t2   # t2 now holds the starting column for the heart to erase
+
+    li   $t3, 4          # Base row for hearts (row 4)
+    li   $t7, 0          # Row offset counter (0 .. 3)
+erase_heart_row_loop:
+    bge  $t7, 4, erase_heart_done  # If row offset >= 4, we're done
+    add  $t8, $t3, $t7   # t8 = current row = base row + row offset
+
+    li   $t5, 0          # Column offset counter (0 .. 4)
+erase_heart_col_loop:
+    bge  $t5, 5, next_heart_row   # If column offset >= 5, move to next row
+    add  $t9, $t2, $t5   # t9 = current column = starting col + column offset
+
+    # Compute pixel address:
+    #   pixel address = BASE_ADDRESS + (current row * 512) + (current col * 4)
+    sll  $a1, $t8, 9     # $a1 = current row * 512  (512 = 2^9)
+    sll  $a2, $t9, 2     # $a2 = current col * 4    (4 = 2^2)
+    add  $a1, $s0, $a1   # $a1 = BASE_ADDRESS + (row offset)
+    add  $a1, $a1, $a2   # $a1 = final pixel address
+    lw   $a3, black     # $a3 = black color (0x00000000)
+    sw   $a3, 0($a1)    # Overwrite pixel with black
+
+    addi $t5, $t5, 1    # Next column offset
+    j    erase_heart_col_loop
+next_heart_row:
+    addi $t7, $t7, 1    # Next row in the heart block
+    j    erase_heart_row_loop
+erase_heart_done:
+    jr   $ra
+
+
 
 ########################################################################
 # START SCREEN SUBROUTINE
