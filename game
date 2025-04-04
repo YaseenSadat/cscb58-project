@@ -69,10 +69,12 @@ light_red:     .word 0x00FA8072   # Salmon
 black: .word 0x00000000
 
 hearts: .word 4
+enemy_collision_count: .word 0
+
 
 # New variables for damage cooldown:
-    damage_cooldown: .word 0    # When > 0, player is temporarily invulnerable.
-    damage_delay:    .word 30   # Delay value in frames (adjust as needed)
+damage_cooldown: .word 0    # When > 0, player is temporarily invulnerable.
+damage_delay:    .word 50   # Delay value in frames (~2 seconds)
 
 # -------------------------------------------------------------------
 # Earth planet colors (for an Earth‐like planet, top right):
@@ -118,7 +120,6 @@ bg_col_loop:
     blt  $t5, 128, bg_col_loop
     addi $t4, $t4, 1
     blt  $t4, 64, bg_row_loop
-
 
 
 ################################################################
@@ -879,11 +880,9 @@ enemy_next_row:
 
 enemy_draw_done_rows:
 
-
-
-    # -------------------------------
-    # Collision Check: Player vs. Enemy
-    # -------------------------------
+################################################################
+# Collision Check: Player vs. Enemy
+################################################################
     # Load player's top-left coordinates.
     la   $t0, player_row      # pointer to player_row
     lw   $t1, 0($t0)          # player's top row
@@ -912,43 +911,117 @@ enemy_draw_done_rows:
     addi $t8, $t7, 3          # enemy's right col
     bgt  $t3, $t8, no_enemy_collision  # if player's left > enemy's right, no collision
 
-    # Collision detected: lose one heart.
-    la   $t0, hearts      # Load address of hearts
-    lw   $t1, 0($t0)      # Load current heart count into $t1
-    addi $t1, $t1, -1     # Decrement heart count by 1
-    sw   $t1, 0($t0)      # Store the new heart count back
+    # --- Begin Damage Cooldown Check ---
+    la   $t8, damage_cooldown   # load address of damage_cooldown
+    lw   $t9, 0($t8)            # load current cooldown value
+    bnez $t9, enemy_damage_active   # if cooldown active, branch to enemy_damage_active
+    # --- End Damage Cooldown Check ---
 
-    # Erase the corresponding heart from the display:
-    move $a0, $t1         # Use the new hearts count as the heart index to erase
-    jal  erase_heart
+    # No cooldown active: Apply damage.
+    la   $t0, hearts            # Load address of hearts
+    lw   $t1, 0($t0)            # Load current heart count
+    addi $t1, $t1, -1           # Decrement heart count by 1
+    sw   $t1, 0($t0)            # Store updated heart count
+    blez $t1, game_over         # If hearts <= 0, branch to game_over
+    move $a0, $t1               # Use new heart count as index (0 = leftmost)
+    jal  erase_heart           # Erase corresponding heart from display
 
-    blez $t1, game_over   # If hearts <= 0, then game over
-    j    continue_game    # Otherwise, continue playing
+    # Set damage cooldown to delay value (50 frames ~2 seconds)
+    li   $t2, 50
+    la   $t8, damage_cooldown
+    sw   $t2, 0($t8)
 
-game_over:
-    li   $t0, 4          # Reset hearts count to 4 for a new game.
-    la   $t1, hearts
-    sw   $t0, 0($t1)
-    jal  start_screen     # Call start screen routine.
-    j    game_loop       # Return to the main game loop.
+    # Reset enemy collision counter to 0 upon taking damage.
+    la   $t8, enemy_collision_count
+    li   $t9, 0
+    sw   $t9, 0($t8)
 
+    j    continue_game         # Jump to continue game processing
 
-continue_game:
-    # Optionally, update the on-screen hearts if needed.
-    j game_loop
+enemy_damage_active:
+    # Damage cooldown is active: increment enemy collision counter.
+    la   $t8, enemy_collision_count  # load address of collision counter
+    lw   $t9, 0($t8)                 # load current collision count
+    addi $t9, $t9, 1                 # increment counter by 1
+    sw   $t9, 0($t8)                 # store updated counter
+    li   $t0, 4                     # constant 4 for comparison
+    beq  $t9, $t0, enemy_collision_reset  # if counter equals 4, reset game
+    j    continue_game              # otherwise, continue game processing
 
+enemy_collision_reset:
+    # Reset the collision counter to 0.
+    la   $t8, enemy_collision_count
+    li   $t9, 0
+    sw   $t9, 0($t8)
+    # Cut to the start screen.
+    jal  start_screen
+    j    game_loop                # Jump back to the main game loop
 
+################################################################
+# Label: no_enemy_collision (if no collision detected)
+################################################################
 no_enemy_collision:
-
-
+    # Decrement damage cooldown (if active)
+    la   $t0, damage_cooldown
+    lw   $t1, 0($t0)
+    bnez $t1, dec_cooldown_done
+    j    frame_delay_start
+dec_cooldown_done:
+    addi $t1, $t1, -1
+    sw   $t1, 0($t0)
+frame_delay_start:
     ################################################################
     # 8) Frame Delay
     ################################################################
     li   $v0, 32
     li   $a0, 40
     syscall
+    j    game_loop
 
-    j game_loop
+################################################################
+# Label: continue_game (after processing a collision)
+################################################################
+continue_game:
+    j    game_loop
+
+################################################################
+# Label: game_over (when hearts run out)
+################################################################
+game_over:
+    # Clear the screen to black.
+    li   $t0, BASE_ADDRESS
+    li   $t3, 0x00000000   # Black color
+    li   $t4, 0            # row counter
+clear_screen_loop:
+    li   $t5, 0            # col counter
+clear_screen_cols:
+    mul  $t6, $t4, 512
+    mul  $t7, $t5, 4
+    add  $t8, $t0, $t6
+    add  $t8, $t8, $t7
+    sw   $t3, 0($t8)
+    addi $t5, $t5, 1
+    blt  $t5, 128, clear_screen_cols
+    addi $t4, $t4, 1
+    blt  $t4, 64, clear_screen_loop
+
+    # (Optional: You could add code here to draw a "GAME OVER" message.)
+
+    # Pause for a short delay (to let the player see the game over state).
+    li   $t2, 1000000     # Adjust this delay constant as needed.
+delay_loop:
+    addi $t2, $t2, -1
+    bnez $t2, delay_loop
+
+    # Reset hearts for the new game.
+    li   $t0, 4
+    la   $t1, hearts
+    sw   $t0, 0($t1)
+
+    # Go to the start screen.
+    jal  start_screen
+    j    game_loop       # Return to main game loop.
+
 
 ######################################################################
 # INPUT HANDLERS
