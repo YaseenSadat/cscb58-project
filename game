@@ -62,8 +62,13 @@ move_delay_value:   .word 2    # Delay constant (adjust for speed)
     # New enemy2 variables
     enemy2_row:        .word 45       # Start enemy2 at row 45
     enemy2_col:        .word 0        # Initial column for enemy2 (adjust as desired)
-    enemy2_velocity:   .word 4        # Horizontal speed (same as enemy1)
+    enemy2_velocity:   .word 2        # Horizontal speed (same as enemy1)
     enemy2_bg_buffer:  .space 64      # Buffer for enemy2’s 4x4 background (16 words)
+    # New enemy3 variables
+    enemy3_row:        .word 35       # Start enemy2 at row 45
+    enemy3_col:        .word 0        # Initial column for enemy2 (adjust as desired)
+    enemy3_velocity:   .word 2        # Horizontal speed (same as enemy1)
+    enemy3_bg_buffer:  .space 64      # Buffer for enemy2’s 4x4 background (16 words)
 
 
 # Multi-shade reds for a more detailed red planet (top left)
@@ -1013,7 +1018,134 @@ enemy2_next_row:
 
 enemy2_draw_done_rows:
 
+
     ################################################################
+    # --- Enemy3: Restore Old Background from enemy3_bg_buffer (4x4) ---
+    ################################################################
+    la   $t0, enemy3_bg_buffer    # pointer to enemy3 background buffer
+    li   $t1, 0                   # row offset index (0..3)
+enemy3_restore_bg_loop_rows:
+    li   $t2, 0                   # column offset index (0..3)
+enemy3_restore_bg_loop_cols:
+    la   $t3, enemy3_row          # load enemy3_row address
+    lw   $t4, 0($t3)              # enemy3's base row
+    add  $t4, $t4, $t1            # current row = enemy3_row + row offset
+    la   $t5, enemy3_col          # load enemy3_col address
+    lw   $t6, 0($t5)              # enemy3's base col
+    add  $t6, $t6, $t2            # current col = enemy3_col + col offset
+    mul  $t4, $t4, 512            # row offset (bytes)
+    mul  $t6, $t6, 4              # col offset (bytes)
+    add  $t7, $s0, $t4            # base address + row offset
+    add  $t7, $t7, $t6            # final pixel address for enemy3 region
+    lw   $t8, 0($t0)              # get stored pixel from enemy3_bg_buffer
+    sw   $t8, 0($t7)              # restore that pixel into the framebuffer
+    addi $t0, $t0, 4              # advance enemy3_bg_buffer pointer
+    addi $t2, $t2, 1
+    blt  $t2, 4, enemy3_restore_bg_loop_cols
+    li   $t2, 0                   # reset col offset for next row
+    addi $t1, $t1, 1
+    blt  $t1, 4, enemy3_restore_bg_loop_rows
+
+    ################################################################
+    # --- Enemy3: Update Position (Horizontal movement) ---
+    ################################################################
+    la   $t0, enemy3_col          # load enemy3_col address
+    lw   $t1, 0($t0)              # get current enemy3 col
+    la   $t2, enemy3_velocity     # load enemy3_velocity address
+    lw   $t3, 0($t2)              # get enemy3 horizontal speed
+    add  $t1, $t1, $t3            # new enemy3 col = old + velocity
+    li   $t4, 124                # right boundary (for 4x4 sprite)
+    ble  $t1, $t4, enemy3_update_done
+    li   $t1, 0                  # if beyond boundary, wrap to left
+enemy3_update_done:
+    sw   $t1, 0($t0)             # store updated enemy3 col
+
+    ################################################################
+    # --- Enemy3: Save New Background into enemy3_bg_buffer (4x4) ---
+    ################################################################
+    la   $t0, enemy3_bg_buffer    # reset pointer for enemy3 background buffer
+    li   $t1, 0                   # row offset index (0..3)
+enemy3_save_bg_loop_rows:
+    li   $t2, 0                   # column offset index (0..3)
+enemy3_save_bg_loop_cols:
+    la   $t3, enemy3_row          # load enemy3_row address
+    lw   $t4, 0($t3)              # enemy3's base row
+    add  $t4, $t4, $t1            # current row = enemy3_row + row offset
+    la   $t5, enemy3_col          # load enemy3_col address
+    lw   $t6, 0($t5)              # enemy3's base col
+    add  $t6, $t6, $t2            # current col = enemy3_col + col offset
+    mul  $t4, $t4, 512            # row offset (bytes)
+    mul  $t6, $t6, 4              # col offset (bytes)
+    add  $t7, $s0, $t4            # base address + row offset
+    add  $t7, $t7, $t6            # final pixel address in framebuffer
+    lw   $t8, 0($t7)              # read current pixel from framebuffer
+    sw   $t8, 0($t0)              # save pixel into enemy3_bg_buffer
+    addi $t0, $t0, 4              # advance enemy3_bg_buffer pointer
+    addi $t2, $t2, 1
+    blt  $t2, 4, enemy3_save_bg_loop_cols
+    addi $t1, $t1, 1
+    blt  $t1, 4, enemy3_save_bg_loop_rows
+
+    ################################################################
+    # --- Enemy3: Draw Sprite (4x4 green block with black eyes) ---
+    ################################################################
+    # Load enemy3 base positions.
+    la   $t0, enemy3_row          # pointer to enemy3_row
+    lw   $t1, 0($t0)              # enemy3's base row -> $t1
+    la   $t0, enemy3_col          # pointer to enemy3_col
+    lw   $t2, 0($t0)              # enemy3's base col -> $t2
+
+    # Load color constants.
+    li   $t7, 0x00008000         # green color for enemy3 body
+    li   $t8, 0x00000000         # black color for eyes
+
+    # Set up constant registers (reuse $s4 and $s5 as before)
+    addi $s4, $zero, 1           # $s4 = 1
+    addi $s5, $zero, 3           # $s5 = 3
+
+    # Initialize row offset in $t3.
+    addi $t3, $zero, 0           # row offset = 0
+enemy3_draw_loop_rows:
+    bge  $t3, 4, enemy3_draw_done_rows  # if row offset >= 4, exit loop
+
+    # Initialize column offset in $t4.
+    addi $t4, $zero, 0           # column offset = 0
+enemy3_draw_loop_cols:
+    bge  $t4, 4, enemy3_next_row   # if column offset >= 4, move to next row
+
+    # Compute current pixel's absolute address:
+    add  $t9, $t1, $t3           # current row = enemy3 base row ($t1) + row offset ($t3)
+    mul  $t9, $t9, 512           # multiply by 512 to get byte offset for the row
+    add  $t5, $t2, $t4           # current col = enemy3 base col ($t2) + col offset ($t4)
+    mul  $t5, $t5, 4             # multiply by 4 to get byte offset for the column
+    add  $t6, $s0, $t9           # add row offset to BASE_ADDRESS
+    add  $t6, $t6, $t5           # add column offset to get final pixel address
+
+    # For enemy3’s second row (row offset 1) draw black eyes at col offsets 1 and 3.
+    beq  $t3, $s4, enemy3_eye_row_check  # if row offset equals 1, check for eyes
+    sw   $t7, 0($t6)             # otherwise, draw green
+    j    enemy3_next_pixel_label
+
+enemy3_eye_row_check:
+    beq  $t4, $s4, enemy3_draw_black   # if col offset equals 1, draw black
+    beq  $t4, $s5, enemy3_draw_black   # if col offset equals 3, draw black
+    sw   $t7, 0($t6)             # otherwise, draw green
+    j    enemy3_next_pixel_label
+
+enemy3_draw_black:
+    sw   $t8, 0($t6)             # draw black pixel for eye
+
+enemy3_next_pixel_label:
+    addi $t4, $t4, 1             # increment column offset
+    j    enemy3_draw_loop_cols
+
+enemy3_next_row:
+    addi $t3, $t3, 1             # increment row offset
+    j    enemy3_draw_loop_rows
+
+enemy3_draw_done_rows:
+
+      ################################################################
     # Collision Check: Player vs. Enemy1
     ################################################################
     # Load player's top-left coordinates.
@@ -1023,20 +1155,20 @@ enemy2_draw_done_rows:
     lw   $t3, 0($t2)          # player's left col
 
     # Load enemy1's top-left coordinates.
-    la   $t4, enemy_row       # pointer to enemy_row
+    la   $t4, enemy_row       # pointer to enemy1's row
     lw   $t5, 0($t4)          # enemy1's top row
-    la   $t6, enemy_col       # pointer to enemy_col
+    la   $t6, enemy_col       # pointer to enemy1's col
     lw   $t7, 0($t6)          # enemy1's left col
 
     # Check enemy1 collision.
     addi $t8, $t1, 3          # player's bottom row
-    blt  $t8, $t5, check_enemy2_collision  # player's bottom < enemy1's top
+    blt  $t8, $t5, check_enemy2_collision  # if player's bottom < enemy1's top, go check enemy2
     addi $t8, $t5, 3          # enemy1's bottom row
-    bgt  $t1, $t8, check_enemy2_collision  # player's top > enemy1's bottom
+    bgt  $t1, $t8, check_enemy2_collision  # if player's top > enemy1's bottom, go check enemy2
     addi $t8, $t3, 3          # player's right col
-    blt  $t8, $t7, check_enemy2_collision  # player's right < enemy1's left
+    blt  $t8, $t7, check_enemy2_collision  # if player's right < enemy1's left, go check enemy2
     addi $t8, $t7, 3          # enemy1's right col
-    bgt  $t3, $t8, check_enemy2_collision  # player's left > enemy1's right
+    bgt  $t3, $t8, check_enemy2_collision  # if player's left > enemy1's right, go check enemy2
 
     # --- Collision with enemy1 detected ---
     # Check damage cooldown.
@@ -1087,13 +1219,13 @@ check_enemy2_collision:
 
     # Check enemy2 collision.
     addi $t8, $t1, 3          # player's bottom row
-    blt  $t8, $t5, no_collision  # player's bottom < enemy2's top
+    blt  $t8, $t5, check_enemy3_collision  # if player's bottom < enemy2's top, check enemy3
     addi $t8, $t5, 3          # enemy2's bottom row
-    bgt  $t1, $t8, no_collision  # player's top > enemy2's bottom
+    bgt  $t1, $t8, check_enemy3_collision  # if player's top > enemy2's bottom, check enemy3
     addi $t8, $t3, 3          # player's right col
-    blt  $t8, $t7, no_collision  # player's right < enemy2's left
+    blt  $t8, $t7, check_enemy3_collision  # if player's right < enemy2's left, check enemy3
     addi $t8, $t7, 3          # enemy2's right col
-    bgt  $t3, $t8, no_collision  # player's left > enemy2's right
+    bgt  $t3, $t8, check_enemy3_collision  # if player's left > enemy2's right, check enemy3
 
     # --- Collision with enemy2 detected ---
     # Check damage cooldown.
@@ -1128,7 +1260,64 @@ enemy2_damage_active:
     j    continue_game
 
     ################################################################
-    # No Collision Detected with either enemy.
+    # Check Enemy3 Collision if enemy2 is clear.
+    ################################################################
+check_enemy3_collision:
+    # Reload player's coordinates.
+    la   $t0, player_row
+    lw   $t1, 0($t0)
+    la   $t2, player_col
+    lw   $t3, 0($t2)
+    # Load enemy3's top-left coordinates.
+    la   $t4, enemy3_row
+    lw   $t5, 0($t4)
+    la   $t6, enemy3_col
+    lw   $t7, 0($t6)
+
+    # Check enemy3 collision.
+    addi $t8, $t1, 3          # player's bottom row
+    blt  $t8, $t5, no_collision  # if player's bottom < enemy3's top, no collision
+    addi $t8, $t5, 3          # enemy3's bottom row
+    bgt  $t1, $t8, no_collision  # if player's top > enemy3's bottom, no collision
+    addi $t8, $t3, 3          # player's right col
+    blt  $t8, $t7, no_collision  # if player's right < enemy3's left, no collision
+    addi $t8, $t7, 3          # enemy3's right col
+    bgt  $t3, $t8, no_collision  # if player's left > enemy3's right, no collision
+
+    # --- Collision with enemy3 detected ---
+    # Check damage cooldown.
+    la   $t8, damage_cooldown
+    lw   $t9, 0($t8)
+    bnez $t9, enemy3_damage_active
+
+    # No cooldown active: Apply damage.
+    la   $t0, hearts
+    lw   $t1, 0($t0)
+    addi $t1, $t1, -1
+    sw   $t1, 0($t0)
+    blez $t1, game_over
+    move $a0, $t1
+    jal  erase_heart
+    li   $t2, 50
+    la   $t8, damage_cooldown
+    sw   $t2, 0($t8)
+    # Reset collision counter.
+    la   $t8, enemy_collision_count
+    li   $t9, 0
+    sw   $t9, 0($t8)
+    j    continue_game
+
+enemy3_damage_active:
+    la   $t8, enemy_collision_count
+    lw   $t9, 0($t8)
+    addi $t9, $t9, 1
+    sw   $t9, 0($t8)
+    li   $t0, 4
+    beq  $t9, $t0, enemy_collision_reset
+    j    continue_game
+
+    ################################################################
+    # No Collision Detected with any enemy.
     ################################################################
 no_collision:
     # Decrement damage cooldown if active.
@@ -1151,7 +1340,6 @@ enemy_collision_reset:
     sw   $t9, 0($t8)
     jal  start_screen
     j    game_loop
-
 
 ################################################################
 # Label: continue_game (after processing a collision)
