@@ -59,6 +59,13 @@ move_delay_value:   .word 2    # Delay constant (adjust for speed)
     enemy_col:        .word 0       # Starting column for enemy
     enemy_velocity:   .word 2       # Horizontal speed (in pixels per frame)
     enemy_bg_buffer:  .space 64     # 4x4 background for enemy (16 words, 64 bytes)
+    # New enemy2 variables
+    enemy2_row:        .word 45       # Start enemy2 at row 45
+    enemy2_col:        .word 0        # Initial column for enemy2 (adjust as desired)
+    enemy2_velocity:   .word 2        # Horizontal speed (same as enemy1)
+    enemy2_bg_buffer:  .space 64      # Buffer for enemy2’s 4x4 background (16 words)
+
+
 # Multi-shade reds for a more detailed red planet (top left)
 darkest_red:   .word 0x008B0000   # Dark red
 dark_red:      .word 0x00B22222   # Firebrick
@@ -68,7 +75,7 @@ light_red:     .word 0x00FA8072   # Salmon
 # Define black color for facial features
 black: .word 0x00000000
 
-hearts: .word 1
+hearts: .word 4
 enemy_collision_count: .word 0
 
 
@@ -880,6 +887,132 @@ enemy_next_row:
 
 enemy_draw_done_rows:
 
+    ################################################################
+    # --- Enemy2: Restore Old Background from enemy2_bg_buffer (4x4) ---
+    ################################################################
+    la   $t0, enemy2_bg_buffer    # pointer to enemy2 background buffer
+    li   $t1, 0                   # row offset index (0..3)
+enemy2_restore_bg_loop_rows:
+    li   $t2, 0                   # column offset index (0..3)
+enemy2_restore_bg_loop_cols:
+    la   $t3, enemy2_row          # load enemy2_row address
+    lw   $t4, 0($t3)              # enemy2's base row
+    add  $t4, $t4, $t1            # current row = enemy2_row + row offset
+    la   $t5, enemy2_col          # load enemy2_col address
+    lw   $t6, 0($t5)              # enemy2's base col
+    add  $t6, $t6, $t2            # current col = enemy2_col + col offset
+    mul  $t4, $t4, 512            # row offset (bytes)
+    mul  $t6, $t6, 4              # col offset (bytes)
+    add  $t7, $s0, $t4            # base address + row offset
+    add  $t7, $t7, $t6            # final pixel address for enemy2 region
+    lw   $t8, 0($t0)              # get stored pixel from enemy2_bg_buffer
+    sw   $t8, 0($t7)              # restore that pixel into the framebuffer
+    addi $t0, $t0, 4              # advance enemy2_bg_buffer pointer
+    addi $t2, $t2, 1
+    blt  $t2, 4, enemy2_restore_bg_loop_cols
+    li   $t2, 0                  # reset col offset for next row
+    addi $t1, $t1, 1
+    blt  $t1, 4, enemy2_restore_bg_loop_rows
+
+    ################################################################
+    # --- Enemy2: Update Position (Horizontal movement) ---
+    ################################################################
+    la   $t0, enemy2_col          # load enemy2_col address
+    lw   $t1, 0($t0)              # get current enemy2 col
+    la   $t2, enemy2_velocity     # load enemy2_velocity address
+    lw   $t3, 0($t2)              # get enemy2 horizontal speed
+    add  $t1, $t1, $t3            # new enemy2 col = old + velocity
+    li   $t4, 124                # right boundary (for 4x4 sprite)
+    ble  $t1, $t4, enemy2_update_done
+    li   $t1, 0                  # if beyond boundary, wrap to left
+enemy2_update_done:
+    sw   $t1, 0($t0)             # store updated enemy2 col
+
+    ################################################################
+    # --- Enemy2: Save New Background into enemy2_bg_buffer (4x4) ---
+    ################################################################
+    la   $t0, enemy2_bg_buffer    # reset pointer for enemy2 background buffer
+    li   $t1, 0                  # row offset index (0..3)
+enemy2_save_bg_loop_rows:
+    li   $t2, 0                  # column offset index (0..3)
+enemy2_save_bg_loop_cols:
+    la   $t3, enemy2_row          # load enemy2_row address
+    lw   $t4, 0($t3)              # enemy2's base row
+    add  $t4, $t4, $t1            # current row = enemy2_row + row offset
+    la   $t5, enemy2_col          # load enemy2_col address
+    lw   $t6, 0($t5)              # enemy2's base col
+    add  $t6, $t6, $t2            # current col = enemy2_col + col offset
+    mul  $t4, $t4, 512            # row offset (bytes)
+    mul  $t6, $t6, 4              # col offset (bytes)
+    add  $t7, $s0, $t4            # base address + row offset
+    add  $t7, $t7, $t6            # final pixel address in framebuffer
+    lw   $t8, 0($t7)              # read current pixel from framebuffer
+    sw   $t8, 0($t0)              # save pixel into enemy2_bg_buffer
+    addi $t0, $t0, 4              # advance enemy2_bg_buffer pointer
+    addi $t2, $t2, 1
+    blt  $t2, 4, enemy2_save_bg_loop_cols
+    addi $t1, $t1, 1
+    blt  $t1, 4, enemy2_save_bg_loop_rows
+
+    ################################################################
+    # --- Enemy2: Draw Sprite (4x4 green block with black eyes) ---
+    ################################################################
+    # Load enemy2 base positions.
+    la   $t0, enemy2_row          # pointer to enemy2_row
+    lw   $t1, 0($t0)              # enemy2's base row -> $t1
+    la   $t0, enemy2_col          # pointer to enemy2_col
+    lw   $t2, 0($t0)              # enemy2's base col -> $t2
+
+    # Load color constants.
+    li   $t7, 0x00008000         # green color for enemy2 body
+    li   $t8, 0x00000000         # black color for eyes
+
+    # Set up constant registers (reuse $s4 and $s5 as before)
+    addi $s4, $zero, 1           # $s4 = 1
+    addi $s5, $zero, 3           # $s5 = 3
+
+    # Initialize row offset in $t3.
+    addi $t3, $zero, 0           # row offset = 0
+enemy2_draw_loop_rows:
+    bge  $t3, 4, enemy2_draw_done_rows  # if row offset >= 4, exit loop
+
+    # Initialize column offset in $t4.
+    addi $t4, $zero, 0           # column offset = 0
+enemy2_draw_loop_cols:
+    bge  $t4, 4, enemy2_next_row   # if column offset >= 4, move to next row
+
+    # Compute current pixel's absolute address:
+    add  $t9, $t1, $t3           # current row = enemy2 base row ($t1) + row offset ($t3)
+    mul  $t9, $t9, 512           # multiply by 512 to get byte offset for the row
+    add  $t5, $t2, $t4           # current col = enemy2 base col ($t2) + col offset ($t4)
+    mul  $t5, $t5, 4             # multiply by 4 to get byte offset for the column
+    add  $t6, $s0, $t9           # add row offset to BASE_ADDRESS
+    add  $t6, $t6, $t5           # add column offset to get final pixel address
+
+    # For enemy2’s second row (row offset 1) draw black eyes at col offsets 1 and 3.
+    beq  $t3, $s4, enemy2_eye_row_check  # if row offset equals 1, check for eyes
+    sw   $t7, 0($t6)             # otherwise, draw green
+    j    enemy2_next_pixel_label
+
+enemy2_eye_row_check:
+    beq  $t4, $s4, enemy2_draw_black   # if col offset equals 1, draw black
+    beq  $t4, $s5, enemy2_draw_black   # if col offset equals 3, draw black
+    sw   $t7, 0($t6)             # otherwise, draw green
+    j    enemy2_next_pixel_label
+
+enemy2_draw_black:
+    sw   $t8, 0($t6)             # draw black pixel for eye
+
+enemy2_next_pixel_label:
+    addi $t4, $t4, 1             # increment column offset
+    j    enemy2_draw_loop_cols
+
+enemy2_next_row:
+    addi $t3, $t3, 1             # increment row offset
+    j    enemy2_draw_loop_rows
+
+enemy2_draw_done_rows:
+
 ################################################################
 # Collision Check: Player vs. Enemy
 ################################################################
@@ -1251,13 +1384,11 @@ G_big_row9_right:
         j    G_big_row9_right
 G_big_row9_done:
 
-# ---------------- Row 10: vertical left block (cols 0-1) and rightmost column (col 15) ----------------
+# ---------------- Row 10: same as Row 9 ----------------
 addi $t3, $t0, 10   # row = base row + 10
-
-# Draw vertical left block (cols 0-1)
 li   $t2, 0
 G_big_row10_left:
-    bge  $t2, 2, G_big_row10_left_done  # only draw for columns 0 and 1
+    bge  $t2, 2, G_big_row10_left_done
     mul  $t4, $t3, 512
     add  $t5, $t1, $t2
     mul  $t5, $t5, 4
@@ -1267,26 +1398,26 @@ G_big_row10_left:
     addi $t2, $t2, 1
     j    G_big_row10_left
 G_big_row10_left_done:
+li   $t2, 14
+G_big_row10_right:
+    bge  $t2, 16, G_big_row10_done
+    mul  $t4, $t3, 512
+    add  $t5, $t1, $t2
+    mul  $t5, $t5, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    G_big_row10_right
+G_big_row10_done:
 
-# Draw rightmost column pixel (col offset 15)
-li   $t2, 15
-mul  $t4, $t3, 512
-add  $t5, $t1, $t2
-mul  $t5, $t5, 4
-add  $t6, $s0, $t4
-add  $t6, $t6, $t5
-sw   $t9, 0($t6)
 
 
-
-
-# ---------------- Row 11: vertical left block (cols 0-1) and rightmost column (col 15) ----------------
+# ---------------- Row 11: same as Row 9 ----------------
 addi $t3, $t0, 11   # row = base row + 11
-
-# Draw vertical left block (cols 0-1)
 li   $t2, 0
 G_big_row11_left:
-    bge  $t2, 2, G_big_row11_left_done  # only draw for columns 0 and 1
+    bge  $t2, 2, G_big_row11_left_done
     mul  $t4, $t3, 512
     add  $t5, $t1, $t2
     mul  $t5, $t5, 4
@@ -1296,15 +1427,19 @@ G_big_row11_left:
     addi $t2, $t2, 1
     j    G_big_row11_left
 G_big_row11_left_done:
+li   $t2, 14
+G_big_row11_right:
+    bge  $t2, 16, G_big_row11_done
+    mul  $t4, $t3, 512
+    add  $t5, $t1, $t2
+    mul  $t5, $t5, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    G_big_row11_right
+G_big_row11_done:
 
-# Draw rightmost column pixel (col offset 15)
-li   $t2, 15
-mul  $t4, $t3, 512
-add  $t5, $t1, $t2
-mul  $t5, $t5, 4
-add  $t6, $s0, $t4
-add  $t6, $t6, $t5
-sw   $t9, 0($t6)
 
 
 
