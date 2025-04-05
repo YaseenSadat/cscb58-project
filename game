@@ -62,7 +62,7 @@ move_delay_value:   .word 2    # Delay constant (adjust for speed)
     # New enemy2 variables
     enemy2_row:        .word 45       # Start enemy2 at row 45
     enemy2_col:        .word 0        # Initial column for enemy2 (adjust as desired)
-    enemy2_velocity:   .word 2        # Horizontal speed (same as enemy1)
+    enemy2_velocity:   .word 4        # Horizontal speed (same as enemy1)
     enemy2_bg_buffer:  .space 64      # Buffer for enemy2’s 4x4 background (16 words)
 
 
@@ -1013,88 +1013,125 @@ enemy2_next_row:
 
 enemy2_draw_done_rows:
 
-################################################################
-# Collision Check: Player vs. Enemy
-################################################################
+    ################################################################
+    # Collision Check: Player vs. Enemy1
+    ################################################################
     # Load player's top-left coordinates.
     la   $t0, player_row      # pointer to player_row
     lw   $t1, 0($t0)          # player's top row
     la   $t2, player_col      # pointer to player_col
     lw   $t3, 0($t2)          # player's left col
 
-    # Load enemy's top-left coordinates.
+    # Load enemy1's top-left coordinates.
     la   $t4, enemy_row       # pointer to enemy_row
-    lw   $t5, 0($t4)          # enemy's top row
+    lw   $t5, 0($t4)          # enemy1's top row
     la   $t6, enemy_col       # pointer to enemy_col
-    lw   $t7, 0($t6)          # enemy's left col
+    lw   $t7, 0($t6)          # enemy1's left col
 
-    # Check if player's bottom (player_row+3) is above enemy's top.
+    # Check enemy1 collision.
     addi $t8, $t1, 3          # player's bottom row
-    blt  $t8, $t5, no_enemy_collision  # if player's bottom < enemy's top, no collision
-
-    # Check if player's top is below enemy's bottom (enemy_row+3).
-    addi $t8, $t5, 3          # enemy's bottom row
-    bgt  $t1, $t8, no_enemy_collision  # if player's top > enemy's bottom, no collision
-
-    # Check if player's right (player_col+3) is left of enemy's left.
+    blt  $t8, $t5, check_enemy2_collision  # player's bottom < enemy1's top
+    addi $t8, $t5, 3          # enemy1's bottom row
+    bgt  $t1, $t8, check_enemy2_collision  # player's top > enemy1's bottom
     addi $t8, $t3, 3          # player's right col
-    blt  $t8, $t7, no_enemy_collision  # if player's right < enemy's left, no collision
+    blt  $t8, $t7, check_enemy2_collision  # player's right < enemy1's left
+    addi $t8, $t7, 3          # enemy1's right col
+    bgt  $t3, $t8, check_enemy2_collision  # player's left > enemy1's right
 
-    # Check if player's left is right of enemy's right (enemy_col+3).
-    addi $t8, $t7, 3          # enemy's right col
-    bgt  $t3, $t8, no_enemy_collision  # if player's left > enemy's right, no collision
-
-    # --- Begin Damage Cooldown Check ---
-    la   $t8, damage_cooldown   # load address of damage_cooldown
-    lw   $t9, 0($t8)            # load current cooldown value
-    bnez $t9, enemy_damage_active   # if cooldown active, branch to enemy_damage_active
-    # --- End Damage Cooldown Check ---
+    # --- Collision with enemy1 detected ---
+    # Check damage cooldown.
+    la   $t8, damage_cooldown
+    lw   $t9, 0($t8)
+    bnez $t9, enemy1_damage_active
 
     # No cooldown active: Apply damage.
-    la   $t0, hearts            # Load address of hearts
-    lw   $t1, 0($t0)            # Load current heart count
-    addi $t1, $t1, -1           # Decrement heart count by 1
-    sw   $t1, 0($t0)            # Store updated heart count
-    blez $t1, game_over         # If hearts <= 0, branch to game_over
-    move $a0, $t1               # Use new heart count as index (0 = leftmost)
-    jal  erase_heart           # Erase corresponding heart from display
-
-    # Set damage cooldown to delay value (50 frames ~2 seconds)
+    la   $t0, hearts
+    lw   $t1, 0($t0)
+    addi $t1, $t1, -1
+    sw   $t1, 0($t0)
+    blez $t1, game_over
+    move $a0, $t1
+    jal  erase_heart
     li   $t2, 50
     la   $t8, damage_cooldown
     sw   $t2, 0($t8)
-
-    # Reset enemy collision counter to 0 upon taking damage.
+    # Reset collision counter.
     la   $t8, enemy_collision_count
     li   $t9, 0
     sw   $t9, 0($t8)
+    j    continue_game
 
-    j    continue_game         # Jump to continue game processing
+enemy1_damage_active:
+    la   $t8, enemy_collision_count
+    lw   $t9, 0($t8)
+    addi $t9, $t9, 1
+    sw   $t9, 0($t8)
+    li   $t0, 4
+    beq  $t9, $t0, enemy_collision_reset
+    j    continue_game
 
-enemy_damage_active:
-    # Damage cooldown is active: increment enemy collision counter.
-    la   $t8, enemy_collision_count  # load address of collision counter
-    lw   $t9, 0($t8)                 # load current collision count
-    addi $t9, $t9, 1                 # increment counter by 1
-    sw   $t9, 0($t8)                 # store updated counter
-    li   $t0, 4                     # constant 4 for comparison
-    beq  $t9, $t0, enemy_collision_reset  # if counter equals 4, reset game
-    j    continue_game              # otherwise, continue game processing
+    ################################################################
+    # Check Enemy2 Collision if enemy1 is clear.
+    ################################################################
+check_enemy2_collision:
+    # Reload player's coordinates.
+    la   $t0, player_row
+    lw   $t1, 0($t0)
+    la   $t2, player_col
+    lw   $t3, 0($t2)
+    # Load enemy2's top-left coordinates.
+    la   $t4, enemy2_row
+    lw   $t5, 0($t4)
+    la   $t6, enemy2_col
+    lw   $t7, 0($t6)
 
-enemy_collision_reset:
-    # Reset the collision counter to 0.
+    # Check enemy2 collision.
+    addi $t8, $t1, 3          # player's bottom row
+    blt  $t8, $t5, no_collision  # player's bottom < enemy2's top
+    addi $t8, $t5, 3          # enemy2's bottom row
+    bgt  $t1, $t8, no_collision  # player's top > enemy2's bottom
+    addi $t8, $t3, 3          # player's right col
+    blt  $t8, $t7, no_collision  # player's right < enemy2's left
+    addi $t8, $t7, 3          # enemy2's right col
+    bgt  $t3, $t8, no_collision  # player's left > enemy2's right
+
+    # --- Collision with enemy2 detected ---
+    # Check damage cooldown.
+    la   $t8, damage_cooldown
+    lw   $t9, 0($t8)
+    bnez $t9, enemy2_damage_active
+
+    # No cooldown active: Apply damage.
+    la   $t0, hearts
+    lw   $t1, 0($t0)
+    addi $t1, $t1, -1
+    sw   $t1, 0($t0)
+    blez $t1, game_over
+    move $a0, $t1
+    jal  erase_heart
+    li   $t2, 50
+    la   $t8, damage_cooldown
+    sw   $t2, 0($t8)
+    # Reset collision counter.
     la   $t8, enemy_collision_count
     li   $t9, 0
     sw   $t9, 0($t8)
-    # Cut to the start screen.
-    jal  start_screen
-    j    game_loop                # Jump back to the main game loop
+    j    continue_game
 
-################################################################
-# Label: no_enemy_collision (if no collision detected)
-################################################################
-no_enemy_collision:
-    # Decrement damage cooldown (if active)
+enemy2_damage_active:
+    la   $t8, enemy_collision_count
+    lw   $t9, 0($t8)
+    addi $t9, $t9, 1
+    sw   $t9, 0($t8)
+    li   $t0, 4
+    beq  $t9, $t0, enemy_collision_reset
+    j    continue_game
+
+    ################################################################
+    # No Collision Detected with either enemy.
+    ################################################################
+no_collision:
+    # Decrement damage cooldown if active.
     la   $t0, damage_cooldown
     lw   $t1, 0($t0)
     bnez $t1, dec_cooldown_done
@@ -1103,13 +1140,18 @@ dec_cooldown_done:
     addi $t1, $t1, -1
     sw   $t1, 0($t0)
 frame_delay_start:
-    ################################################################
-    # 8) Frame Delay
-    ################################################################
     li   $v0, 32
     li   $a0, 40
     syscall
     j    game_loop
+
+enemy_collision_reset:
+    la   $t8, enemy_collision_count
+    li   $t9, 0
+    sw   $t9, 0($t8)
+    jal  start_screen
+    j    game_loop
+
 
 ################################################################
 # Label: continue_game (after processing a collision)
