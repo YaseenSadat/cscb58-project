@@ -68,7 +68,7 @@ light_red:     .word 0x00FA8072   # Salmon
 # Define black color for facial features
 black: .word 0x00000000
 
-hearts: .word 4
+hearts: .word 1
 enemy_collision_count: .word 0
 
 
@@ -988,39 +988,891 @@ continue_game:
 # Label: game_over (when hearts run out)
 ################################################################
 game_over:
-    # Clear the screen to black.
-    li   $t0, BASE_ADDRESS
-    li   $t3, 0x00000000   # Black color
-    li   $t4, 0            # row counter
+            # Clear the screen to red.
+        li   $s0, BASE_ADDRESS
+
+        li   $t3, 0x00FF0000    # Red color
+        li   $t4, 0             # row counter
 clear_screen_loop:
-    li   $t5, 0            # col counter
+        li   $t5, 0             # col counter
 clear_screen_cols:
-    mul  $t6, $t4, 512
+        mul  $t6, $t4, 512      # row offset in bytes
+        mul  $t7, $t5, 4        # column offset in bytes
+        add  $t8, $s0, $t6      # base address + row offset
+        add  $t8, $t8, $t7      # add column offset
+        sw   $t3, 0($t8)        # set pixel to red
+        addi $t5, $t5, 1
+        blt  $t5, 128, clear_screen_cols
+        addi $t4, $t4, 1
+        blt  $t4, 64, clear_screen_loop
+
+        # --- Draw the big letter G (16x16 pixels) ---
+        # White color for the letter.
+        li   $t9, 0x00FFFFFF
+
+        # Define base coordinates for the big G.
+        li   $t0, 20       # base row for G
+        li   $t1, 10      # base col for G
+
+        # The design is based on scaling your 8-row pattern by 2.
+        # The scaled pattern (each row is relative to the G’s top row):
+        #
+        # Rows 0-1 (original row 0): full horizontal line (cols 0-15)
+        # Rows 2-3 (original row 1): left block only (cols 0-1)
+        # Rows 4-5 (original row 2): left block (cols 0-1) and right segment (cols 8-15)
+        # Rows 6-7 (original row 3): left block (cols 0-1) and right block (cols 14-15)
+        # Rows 8-9 (original row 4): left block (cols 0-1) and right block (cols 14-15)
+        # Rows 10-11 (original row 5): left block (cols 0-1) and right segment (cols 8-15)
+        # Rows 12-13 (original row 6): left block (cols 0-1) and right block (cols 14-15)
+        # Rows 14-15 (original row 7): horizontal line (cols 2-15)
+
+        # ---------------- Row 0: full horizontal line (16 pixels) ----------------
+        li   $t2, 0         # column counter
+G_big_row0:
+        bge  $t2, 16, G_big_row0_done
+        # Compute absolute row = base row + 0, absolute col = base col + $t2.
+        move $t3, $t0     
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row0
+G_big_row0_done:
+
+        # ---------------- Row 1: full horizontal line (16 pixels) ----------------
+        addi $t3, $t0, 1    # row = base row + 1
+        li   $t2, 0
+G_big_row1:
+        bge  $t2, 16, G_big_row1_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row1
+G_big_row1_done:
+
+        # ---------------- Row 2: left block only (cols 0-1) ----------------
+        addi $t3, $t0, 2    # row = base row + 2
+        li   $t2, 0
+G_big_row2:
+        bge  $t2, 2, G_big_row2_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2   # only for t2 = 0,1
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row2
+G_big_row2_done:
+
+        # ---------------- Row 3: left block only (cols 0-1) ----------------
+        addi $t3, $t0, 3    # row = base row + 3
+        li   $t2, 0
+G_big_row3:
+        bge  $t2, 2, G_big_row3_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row3
+G_big_row3_done:
+
+        # ---------------- Row 4: left block (cols 0-1) & right segment (cols 8-15) ----------------
+        addi $t3, $t0, 4    # row = base row + 4
+        # Left block:
+        li   $t2, 0
+G_big_row4_left:
+        bge  $t2, 2, G_big_row4_left_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row4_left
+G_big_row4_left_done:
+        # Right segment:
+        li   $t2, 8
+G_big_row4_right:
+        bge  $t2, 16, G_big_row4_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row4_right
+G_big_row4_done:
+
+        # ---------------- Row 5: same as Row 4 ----------------
+        addi $t3, $t0, 5    # row = base row + 5
+        li   $t2, 0
+G_big_row5_left:
+        bge  $t2, 2, G_big_row5_left_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row5_left
+G_big_row5_left_done:
+        li   $t2, 8
+G_big_row5_right:
+        bge  $t2, 16, G_big_row5_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row5_right
+G_big_row5_done:
+
+        # ---------------- Row 6: left block (cols 0-1) & right block (cols 14-15) ----------------
+        addi $t3, $t0, 6    # row = base row + 6
+        li   $t2, 0
+G_big_row6_left:
+        bge  $t2, 2, G_big_row6_left_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row6_left
+G_big_row6_left_done:
+        li   $t2, 14
+G_big_row6_right:
+        bge  $t2, 16, G_big_row6_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row6_right
+G_big_row6_done:
+
+        # ---------------- Row 7: same as Row 6 ----------------
+        addi $t3, $t0, 7    # row = base row + 7
+        li   $t2, 0
+G_big_row7_left:
+        bge  $t2, 2, G_big_row7_left_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row7_left
+G_big_row7_left_done:
+        li   $t2, 14
+G_big_row7_right:
+        bge  $t2, 16, G_big_row7_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row7_right
+G_big_row7_done:
+
+        # ---------------- Row 8: same as Rows 6-7 for original row 4 (left block & right block) ----------------
+        addi $t3, $t0, 8    # row = base row + 8
+        li   $t2, 0
+G_big_row8_left:
+        bge  $t2, 2, G_big_row8_left_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row8_left
+G_big_row8_left_done:
+        li   $t2, 14
+G_big_row8_right:
+        bge  $t2, 16, G_big_row8_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row8_right
+G_big_row8_done:
+
+        # ---------------- Row 9: same as Row 8 ----------------
+        addi $t3, $t0, 9    # row = base row + 9
+        li   $t2, 0
+G_big_row9_left:
+        bge  $t2, 2, G_big_row9_left_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row9_left
+G_big_row9_left_done:
+        li   $t2, 14
+G_big_row9_right:
+        bge  $t2, 16, G_big_row9_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row9_right
+G_big_row9_done:
+
+# ---------------- Row 10: vertical left block (cols 0-1) and rightmost column (col 15) ----------------
+addi $t3, $t0, 10   # row = base row + 10
+
+# Draw vertical left block (cols 0-1)
+li   $t2, 0
+G_big_row10_left:
+    bge  $t2, 2, G_big_row10_left_done  # only draw for columns 0 and 1
+    mul  $t4, $t3, 512
+    add  $t5, $t1, $t2
+    mul  $t5, $t5, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    G_big_row10_left
+G_big_row10_left_done:
+
+# Draw rightmost column pixel (col offset 15)
+li   $t2, 15
+mul  $t4, $t3, 512
+add  $t5, $t1, $t2
+mul  $t5, $t5, 4
+add  $t6, $s0, $t4
+add  $t6, $t6, $t5
+sw   $t9, 0($t6)
+
+
+
+
+# ---------------- Row 11: vertical left block (cols 0-1) and rightmost column (col 15) ----------------
+addi $t3, $t0, 11   # row = base row + 11
+
+# Draw vertical left block (cols 0-1)
+li   $t2, 0
+G_big_row11_left:
+    bge  $t2, 2, G_big_row11_left_done  # only draw for columns 0 and 1
+    mul  $t4, $t3, 512
+    add  $t5, $t1, $t2
+    mul  $t5, $t5, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    G_big_row11_left
+G_big_row11_left_done:
+
+# Draw rightmost column pixel (col offset 15)
+li   $t2, 15
+mul  $t4, $t3, 512
+add  $t5, $t1, $t2
+mul  $t5, $t5, 4
+add  $t6, $s0, $t4
+add  $t6, $t6, $t5
+sw   $t9, 0($t6)
+
+
+
+
+        # ---------------- Row 12: left block (cols 0-1) & right block (cols 14-15) ----------------
+        addi $t3, $t0, 12   # row = base row + 12
+        li   $t2, 0
+G_big_row12_left:
+        bge  $t2, 2, G_big_row12_left_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row12_left
+G_big_row12_left_done:
+        li   $t2, 14
+G_big_row12_right:
+        bge  $t2, 16, G_big_row12_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row12_right
+G_big_row12_done:
+
+        # ---------------- Row 13: same as Row 12 ----------------
+        addi $t3, $t0, 13   # row = base row + 13
+        li   $t2, 0
+G_big_row13_left:
+        bge  $t2, 2, G_big_row13_left_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row13_left
+G_big_row13_left_done:
+        li   $t2, 14
+G_big_row13_right:
+        bge  $t2, 16, G_big_row13_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row13_right
+G_big_row13_done:
+
+        # ---------------- Row 14: horizontal segment (cols 2-15) ----------------
+        addi $t3, $t0, 14   # row = base row + 14
+	li   $t2, 2
+G_big_row14:
+        bge  $t2, 16, G_big_row14_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row14
+G_big_row14_done:
+
+        # ---------------- Row 15: same as Row 14 ----------------
+        addi $t3, $t0, 15   # row = base row + 15
+        li   $t2, 2
+G_big_row15:
+        bge  $t2, 16, G_big_row15_done
+        mul  $t4, $t3, 512
+        add  $t5, $t1, $t2
+        mul  $t5, $t5, 4
+        add  $t6, $s0, $t4
+        add  $t6, $t6, $t5
+        sw   $t9, 0($t6)
+        addi $t2, $t2, 1
+        j    G_big_row15
+G_big_row15_done:
+
+# ========= Draw Big "A" Beside the Big "G" on the Game Over Screen =========
+# (Assumes $s0 holds BASE_ADDRESS and $t9 is still set to white: 0x00FFFFFF)
+
+# Set base coordinates for the A (positioned beside the G)
+li   $t0, 20      # Base row for A (same vertical alignment as G)
+li   $t1, 31      # Base column for A (to the right of G, which ends near col 25)
+li   $t2, 0
+
+# Draw top horizontal line of A (8 pixels wide)
+A_top_loop_go:
+    bge  $t2, 7, A_top_done_go
+    add  $t3, $t1, $t2      # current col = base col + offset
+    mul  $t4, $t0, 512      # row offset (base row * 512)
+    mul  $t5, $t3, 4        # col offset (current col * 4)
+    add  $t6, $s0, $t4      # address = BASE_ADDRESS + row offset
+    add  $t6, $t6, $t5      # add col offset
+    sw   $t9, 0($t6)        # write white pixel
+    addi $t2, $t2, 1
+    j    A_top_loop_go
+A_top_done_go:
+
+# Draw the left vertical leg of A
+li   $t0, 21      # start one row below the top
+A_left_vert_go:
+    bgt  $t0, 35, A_left_done_go   # Draw until row 35 (adjust for desired height)
+    mul  $t4, $t0, 512
+    li   $t7, 30     # left side stays at base col 27
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    A_left_vert_go
+A_left_done_go:
+
+# Draw the right vertical leg of A
+li   $t0, 21      # reset row counter for the right leg
+A_right_vert_go:
+    bgt  $t0, 35, A_right_done_go
+    mul  $t4, $t0, 512
+    li   $t7, 38     # right side at col 35 (adjust for width)
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    A_right_vert_go
+A_right_done_go:
+
+# Draw the horizontal crossbar of A
+li   $t0, 28      # choose a row for the crossbar (adjust as needed)
+li   $t2, 30      # start at the left side of A
+A_crossbar_go:
+    bge  $t2, 39, A_crossbar_done_go  # Draw from col 27 up to (but not including) col 36
+    mul  $t4, $t0, 512
+    mul  $t5, $t2, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    A_crossbar_go
+A_crossbar_done_go:
+
+# ---- Draw M (row 20, col 44) ----
+# This is the original W drawing code with label names changed to M.
+li   $t0, 20         # Base row for M (changed from 15 to 20)
+li   $t1, 44         # Base column for M (changed from 50 to 44)
+li   $t2, 0
+M_left:
+    bge $t2, 16, M_left_done
+    add $t3, $t0, $t2
+    mul $t4, $t3, 512
+    mul $t5, $t1, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    M_left
+M_left_done:
+
+li   $t2, 0
+M_right:
+    bge $t2, 16, M_right_done
+    add $t3, $t0, $t2
+    li $t7, 51         # Right stroke now at col 51 (44 + 7)
+    mul $t4, $t3, 512
+    mul $t5, $t7, 4
+    add $t6, $s0, $t4
+    add $t6, $t6, $t5
+    sw $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    M_right
+M_right_done:
+
+# M diagonal left-to-center (row 30 to 32, cols 48 to 50)
+li   $t2, 0
+M_diag_left:
+    bge $t2, 3, M_diag_left_done
+    addi $t3, $t2, 20    # row = 20 + 10 = 30, plus t2 offset
+    addi $t4, $t2, 45    # col = 44 + 4 = 48, plus t2 offset
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j    M_diag_left
+M_diag_left_done:
+
+# M diagonal right-to-center (row 30 to 32, cols 47 downwards)
+li   $t2, 0
+M_diag_right:
+    bge $t2, 3, M_diag_right_done
+    addi $t3, $t2, 20    # row = 20 + 10 = 30, plus t2 offset
+    li   $t4, 50         # col = 44 + 3 = 47
+    sub  $t4, $t4, $t2   # adjust by t2 (t2 = 0,1,2)
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j    M_diag_right
+M_diag_right_done:
+
+# ---- Draw E (row 20, col 56) ----
+# Base coordinates for E
+li   $t0, 20        # Base row for E
+li   $t1, 56        # Base column for E (moved 2 cols left from 58 to 56)
+li   $t2, 0
+
+# Draw left vertical stroke of E (16 pixels tall)
+E_left_vert:
+    bge $t2, 16, E_left_vert_done  # Draw 16 rows (from row 20 to row 35)
+    add  $t3, $t0, $t2             # current row = base row + offset
+    mul  $t4, $t3, 512             # compute row offset in bytes
+    mul  $t5, $t1, 4               # compute col offset (left stroke at base col)
+    add  $t6, $s0, $t4             # BASE_ADDRESS + row offset
+    add  $t6, $t6, $t5             # add column offset
+    sw   $t9, 0($t6)              # store white pixel (in $t9)
+    addi $t2, $t2, 1
+    j    E_left_vert
+E_left_vert_done:
+
+# Draw top horizontal stroke of E (8 pixels wide) at row = base row (20)
+li   $t2, 0
+E_top:
+    bge $t2, 8, E_top_done
+    add  $t3, $t1, $t2            # current col = base col + offset
+    mul  $t4, $t0, 512            # row offset for row 20
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    E_top
+E_top_done:
+
+# Draw middle horizontal stroke of E (8 pixels wide) at row = base row + 8 (i.e. row 28)
+li   $t2, 0
+li   $t7, 20
+addi $t8, $t7, 8             # middle row = 28
+E_middle:
+    bge $t2, 6, E_middle_done
+    add  $t3, $t1, $t2         # current col = base col + offset
+    mul  $t4, $t8, 512         # row offset for row 28
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    E_middle
+E_middle_done:
+
+# Draw bottom horizontal stroke of E (8 pixels wide) at row = base row + 15 (i.e. row 35)
+li   $t2, 0
+li   $t7, 20
+addi $t8, $t7, 15           # bottom row = 35
+E_bottom:
+    bge $t2, 8, E_bottom_done
+    add  $t3, $t1, $t2         # current col = base col + offset
+    mul  $t4, $t8, 512         # row offset for row 35
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    E_bottom
+E_bottom_done:
+
+# ---- Draw thicker and taller O (14x10 with 2-pixel thick border) under the M ----
+# Base coordinates for O:
+li   $t0, 41        # Base row for O (moved 5 pixels lower)
+li   $t1, 43        # Base col for O (same as before)
+# Assumes $s0 holds BASE_ADDRESS and $t9 holds white (0x00FFFFFF)
+
+# -------------------------------------
+# Draw top border (2 rows: rows 41 and 42)
+li   $t2, 0
+O_top_border:
+    bge  $t2, 2, O_top_border_done
+    add  $t3, $t0, $t2
+    li   $t4, 0
+O_top_border_col:
+    bge  $t4, 10, O_top_border_next
+    add  $t5, $t1, $t4
+    mul  $t6, $t3, 512
     mul  $t7, $t5, 4
-    add  $t8, $t0, $t6
+    add  $t8, $s0, $t6
     add  $t8, $t8, $t7
-    sw   $t3, 0($t8)
-    addi $t5, $t5, 1
-    blt  $t5, 128, clear_screen_cols
+    sw   $t9, 0($t8)
     addi $t4, $t4, 1
-    blt  $t4, 64, clear_screen_loop
+    j    O_top_border_col
+O_top_border_next:
+    addi $t2, $t2, 1
+    j    O_top_border
+O_top_border_done:
 
-    # (Optional: You could add code here to draw a "GAME OVER" message.)
+# -------------------------------------
+# Draw bottom border (rows 53 and 54: base row + 12 and +13)
+li   $t2, 0
+O_bottom_border:
+    bge  $t2, 2, O_bottom_border_done
+    addi $t3, $t0, 12
+    add  $t3, $t3, $t2
+    li   $t4, 0
+O_bottom_border_col:
+    bge  $t4, 10, O_bottom_border_next
+    add  $t5, $t1, $t4
+    mul  $t6, $t3, 512
+    mul  $t7, $t5, 4
+    add  $t8, $s0, $t6
+    add  $t8, $t8, $t7
+    sw   $t9, 0($t8)
+    addi $t4, $t4, 1
+    j    O_bottom_border_col
+O_bottom_border_next:
+    addi $t2, $t2, 1
+    j    O_bottom_border
+O_bottom_border_done:
 
-    # Pause for a short delay (to let the player see the game over state).
-    li   $t2, 1000000     # Adjust this delay constant as needed.
-delay_loop:
-    addi $t2, $t2, -1
-    bnez $t2, delay_loop
+# -------------------------------------
+# Draw left border (2 columns) for middle rows (rows 43 to 52)
+li   $t2, 0
+O_left_border:
+    bge  $t2, 10, O_left_border_done
+    addi $t3, $t0, 2
+    add  $t3, $t3, $t2
+    li   $t4, 0
+O_left_border_col:
+    bge  $t4, 2, O_left_border_next
+    add  $t5, $t1, $t4
+    mul  $t6, $t3, 512
+    mul  $t7, $t5, 4
+    add  $t8, $s0, $t6
+    add  $t8, $t8, $t7
+    sw   $t9, 0($t8)
+    addi $t4, $t4, 1
+    j    O_left_border_col
+O_left_border_next:
+    addi $t2, $t2, 1
+    j    O_left_border
+O_left_border_done:
 
-    # Reset hearts for the new game.
-    li   $t0, 4
-    la   $t1, hearts
-    sw   $t0, 0($t1)
+# -------------------------------------
+# Draw right border (2 columns) for middle rows (rows 43 to 52)
+li   $t2, 0
+O_right_border:
+    bge  $t2, 10, O_right_border_done
+    addi $t3, $t0, 2
+    add  $t3, $t3, $t2
+    li   $t4, 0
+O_right_border_col:
+    bge  $t4, 2, O_right_border_next
+    li   $t5, 8
+    add  $t5, $t1, $t5
+    add  $t5, $t5, $t4
+    mul  $t6, $t3, 512
+    mul  $t7, $t5, 4
+    add  $t8, $s0, $t6
+    add  $t8, $t8, $t7
+    sw   $t9, 0($t8)
+    addi $t4, $t4, 1
+    j    O_right_border_col
+O_right_border_next:
+    addi $t2, $t2, 1
+    j    O_right_border
+O_right_border_done:
 
-    # Go to the start screen.
-    jal  start_screen
-    j    game_loop       # Return to main game loop.
+# ---- Draw V beside the O ----
+# Assumes:
+#   $s0 holds BASE_ADDRESS
+#   $t9 holds white (0x00FFFFFF)
+# This V is drawn starting at row 41 with its center at col 55, height = 14 pixels.
+# The arms converge to a point at the bottom.
+ 
+    li   $t0, 0          # Row counter (i: 0 to 13 for 14 rows)
+    li   $t1, 41         # Base row for V (top row)
+    li   $t2, 59         # Center column for V
+    li   $t3, 3          # Maximum horizontal offset at the top = 3 pixels
+    li   $t7, 13         # Denom for interpolation (height - 1 = 13)
+ 
+V_loop:
+    bge  $t0, 14, V_done         # If row counter >= 14, we're done.
+    add  $t4, $t1, $t0           # Current row = base row + i
+ 
+    # Compute offset = 3 - (3 * i) / 13
+    mul  $t5, $t0, $t3           # t5 = i * 3
+    div  $t5, $t7                # Divide by 13; quotient goes to LO
+    mflo $t5                    # t5 = (i*3)/13 (integer division)
+    sub  $t6, $t3, $t5          # t6 = offset = 3 - (i*3)/13
+ 
+    # Compute left and right pixel columns:
+    sub  $t8, $t2, $t6          # left pixel col = center - offset
+    add  $s1, $t2, $t6          # s1 = right pixel col = center + offset
+ 
+    # Draw left pixel:
+    mul  $s2, $t4, 512          # s2 = current row * 512 (row offset in bytes)
+    mul  $s3, $t8, 4            # s3 = left col * 4 (column offset in bytes)
+    add  $s4, $s0, $s2          # s4 = BASE_ADDRESS + row offset
+    add  $s4, $s4, $s3          # s4 = final pixel address for left pixel
+    sw   $t9, 0($s4)            # store white pixel at left location
+ 
+    # Draw right pixel:
+    mul  $s3, $s1, 4            # s3 = right col * 4 (reuse s3)
+    add  $s4, $s0, $s2          # s4 = BASE_ADDRESS + row offset (reuse s4)
+    add  $s4, $s4, $s3          # s4 = final pixel address for right pixel
+    sw   $t9, 0($s4)            # store white pixel at right location
+ 
+    addi $t0, $t0, 1            # Increment row counter
+    j    V_loop
+V_done:
+
+
+# ---- Draw E beside the V ----
+# Base coordinates for E_3
+li $t0, 41        # base row
+li $t1, 66        # base column (adjust as needed)
+
+# Top horizontal line of E_3 (row 41)
+li   $t2, 0
+E3_top:
+    bge $t2, 7, E3_top_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t0, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    E3_top
+E3_top_done:
+
+# Left vertical line of E_3 (col = base col)
+li   $t2, 0
+E3_left:
+    bge $t2, 14, E3_left_done
+    add  $t3, $t0, $t2
+    mul  $t4, $t3, 512
+    mul  $t5, $t1, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    E3_left
+E3_left_done:
+
+# Middle horizontal line of E_3 (row 48)
+li   $t2, 0
+li   $t7, 48
+E3_mid:
+    bge $t2, 6, E3_mid_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t7, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    E3_mid
+E3_mid_done:
+
+# Bottom horizontal line of E_3 (row 54)
+li   $t2, 0
+li   $t7, 54
+E3_bot:
+    bge $t2, 7, E3_bot_done
+    add  $t3, $t1, $t2
+    mul  $t4, $t7, 512
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    E3_bot
+E3_bot_done:
+
+# ---- Draw R_2 (moved one pixel down; top starts at row 41, col 75) ----
+
+# Top Horizontal Stroke (row 41)
+li   $t0, 41        # base row for top stroke
+li   $t1, 75        # base column
+li   $t2, 0         # column offset counter
+R_top_loop2:
+    bge  $t2, 6, R_top_done2
+    add  $t3, $t1, $t2         # current col = base col + offset
+    mul  $t4, $t0, 512         # row offset in bytes
+    mul  $t5, $t3, 4           # column offset in bytes
+    add  $t6, $s0, $t4         # BASE_ADDRESS + row offset
+    add  $t6, $t6, $t5         # final pixel address
+    sw   $t9, 0($t6)           # draw pixel
+    addi $t2, $t2, 1
+    j    R_top_loop2
+R_top_done2:
+
+# Left Vertical Stroke (rows 41 to 52)
+li   $t0, 41        # starting row for left vertical stroke
+R_left_vert2:
+    bgt  $t0, 54, R_left_done2
+    mul  $t4, $t0, 512         # row offset
+    mul  $t5, $t1, 4           # left column offset (base col remains 75)
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    R_left_vert2
+R_left_done2:
+
+# Top Right Vertical Stroke (rows 42 to 45)
+li   $t0, 42        # starting row for top right vertical stroke
+li   $t7, 81        # right stroke column = base col + 6 (75+6=81)
+R_top_right_vert2:
+    bgt  $t0, 45, R_top_right_done2
+    mul  $t4, $t0, 512
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    R_top_right_vert2
+R_top_right_done2:
+
+# Horizontal Cross Stroke (row 46)
+li   $t0, 46        # row for cross stroke
+li   $t2, 0         # column offset counter
+R_cross_loop2:
+    bge  $t2, 6, R_cross_done2
+    add  $t3, $t1, $t2         # current col = base col + offset
+    mul  $t4, $t0, 512         # row offset in bytes
+    mul  $t5, $t3, 4           # column offset in bytes
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    R_cross_loop2
+R_cross_done2:
+
+# Bottom Vertical Leg (rows 47 to 52)
+li   $t0, 47        # starting row for bottom leg
+li   $t7, 81        # right column remains 81
+R_bottom_leg2:
+    bgt  $t0, 54, R_bottom_done2
+    mul  $t4, $t0, 512
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t0, $t0, 1
+    j    R_bottom_leg2
+R_bottom_done2:
+
+
+        # --- Wait for a key press (stays on screen) ---
+wait_key:
+        li   $t0, 0xffff0000   # Keyboard MMIO base address
+        lw   $t1, 0($t0)       # Read key status
+        beq  $t1, $zero, wait_key
+        jr   $ra              # Return or halt execution
+
+
 
 
 ######################################################################
