@@ -70,6 +70,21 @@ move_delay_value:   .word 2    # Delay constant (adjust for speed)
     enemy3_velocity:   .word 2        # Horizontal speed (same as enemy1)
     enemy3_bg_buffer:  .space 64      # Buffer for enemy2’s 4x4 background (16 words)
 
+coin_pattern_9:
+    .word 0x60, 0xF0, 0x1F8, 0x1F8, 0x1F8, 0x1F8, 0xF0, 0x60
+
+# Letter "C" pattern (5x5):
+# Row0: 0x1F -> 11111
+# Row1: 0x10 -> 10000
+# Row2: 0x10 -> 10000
+# Row3: 0x10 -> 10000
+# Row4: 0x1F -> 11111
+c_pattern:
+    .byte 0x1E, 0x10, 0x10, 0x10, 0x1F
+
+
+coin_counter: .word 0
+
 
 # Multi-shade reds for a more detailed red planet (top left)
 darkest_red:   .word 0x008B0000   # Dark red
@@ -544,6 +559,13 @@ platE_loop:
     addi $t5, $t5, 1
     blt  $t5, 121, platE_loop
 
+
+ # ------ Draw Gold Coin (8x8) -------
+    li $a0, 32      # top row for coin
+    li $a1, 50      # left column for coin
+    jal draw_gold_coin
+    
+    
     ################################################################
     # INIT PREVIOUS PLAYER POSITION
     ################################################################
@@ -1340,6 +1362,10 @@ enemy_collision_reset:
     sw   $t9, 0($t8)
     jal  start_screen
     j    game_loop
+
+
+
+
 
 ################################################################
 # Label: continue_game (after processing a collision)
@@ -2546,6 +2572,148 @@ set_floor:
 end:
     j end
 
+    ######################################################################
+    # Subroutine: draw_gold_coin
+    # Draws a 9x8 gold coin sprite with a dark gold "C" in the middle.
+    #
+    # Input:
+    #   $a0 = top row (pixel row) where coin will be drawn.
+    #   $a1 = left column (pixel column) where coin will be drawn.
+    # Assumes:
+    #   $s0 contains the framebuffer base address.
+    #
+    # The coin shape is defined by an 8-word pattern (using its lower 9 bits)
+    # stored in coin_pattern_9.
+    #
+    # A dark gold "C" (defined by a 5x5 pattern in c_pattern) is drawn in the
+    # coin’s center (for coin rows 2..6 and coin columns 2..6).
+    ######################################################################
+draw_gold_coin:
+    li   $t0, 0              # coin row index (0..7)
+coin_row_loop:
+    bge  $t0, 8, coin_done   # if row index >= 8, finish
+
+    # Load coin pattern for the current row.
+    la   $t8, coin_pattern_9    # base address of coin pattern array
+    mul  $t9, $t0, 4           # offset = row index * 4 bytes
+    add  $t8, $t8, $t9         # address of coin pattern for this row
+    lw   $t2, 0($t8)           # load coin pattern word (lower 9 bits valid)
+
+    li   $t1, 0              # coin column index (0..8)
+coin_col_loop:
+    bge  $t1, 9, coin_next_row   # if col index >= 9, go to next row
+
+    # Compute shift amount = 8 - column index.
+    li   $t3, 8
+    sub  $t3, $t3, $t1       # t3 = (8 - coin column)
+
+    srlv $t4, $t2, $t3       # shift coin pattern right by (8 - col)
+    andi $t4, $t4, 1         # t4 now holds the coin bit (0 or 1)
+    beq  $t4, $zero, coin_skip_pixel  # if coin bit is 0, skip drawing
+
+    # Check if this coin pixel is within the letter "C" region.
+    # Region: coin rows 2 to 6 and coin cols 2 to 6.
+    li   $t5, 2
+    blt  $t0, $t5, coin_draw_gold    # if coin row < 2, not in letter region
+    li   $t5, 7
+    bge  $t0, $t5, coin_draw_gold    # if coin row >= 7, not in letter region
+    li   $t5, 2
+    blt  $t1, $t5, coin_draw_gold    # if coin col < 2, not in letter region
+    li   $t5, 7
+    bge  $t1, $t5, coin_draw_gold    # if coin col >= 7, not in letter region
+
+    # Coin pixel is inside the letter region.
+    # Compute letter row = coin row - 2, store in $a2.
+    move $a2, $t0
+    li   $t5, 2
+    sub  $a2, $a2, $t5          # a2 = letter row (0..4)
+
+    # Load letter pattern for the computed letter row.
+    la   $a3, c_pattern         # base address of letter "C" pattern
+    add  $a3, $a3, $a2          # address for this row in c_pattern
+    lb   $a3, 0($a3)            # load the letter pattern byte (lower 5 bits valid)
+
+    # Compute letter column = coin col - 2; store in $a2.
+    move $a2, $t1
+    li   $t5, 2
+    sub  $a2, $a2, $t5          # a2 = letter column (0..4)
+
+    # Compute shift for letter pattern: shift = 4 - letter column.
+    li   $t5, 4
+    sub  $t5, $t5, $a2          # t5 = (4 - letter col)
+    srlv $t6, $a3, $t5         # t6 = letter pattern row >> (4 - letter col)
+    andi $t6, $t6, 1           # isolate letter bit (0 or 1)
+    bne  $t6, $zero, coin_draw_dark  # if letter bit == 1, use dark gold
+
+coin_draw_gold:
+    li   $t7, 0x00FFD700       # bright gold color
+    j    coin_draw_pixel
+
+coin_draw_dark:
+    li   $t7, 0x00B8860B       # dark gold color for letter "C"
+
+coin_draw_pixel:
+    # Compute the screen pixel address.
+    # current_row = $a0 + coin row index; multiply by 512.
+    addu $t8, $a0, $t0
+    sll  $t8, $t8, 9          # multiply row by 512 (2^9)
+    # current_col = $a1 + coin column index; multiply by 4.
+    addu $t9, $a1, $t1
+    sll  $t9, $t9, 2          # multiply col by 4 (2^2)
+    addu $t8, $t8, $t9        # add row and column offsets
+    addu $t8, $s0, $t8        # add framebuffer base address
+    sw   $t7, 0($t8)          # store the chosen color
+
+coin_skip_pixel:
+    addi $t1, $t1, 1          # next coin column
+    j    coin_col_loop
+
+coin_next_row:
+    addi $t0, $t0, 1          # next coin row
+    j    coin_row_loop
+
+coin_done:
+    jr   $ra                 # return from subroutine
+
+
+######################################################################
+# Subroutine: erase_coin
+# Erases the gold coin drawn at fixed position (row 32, col 50, 9x8 size)
+# by overwriting its pixels with the black color.
+######################################################################
+erase_coin:
+    li   $t0, 50          # Base column for the coin
+    li   $t1, 32          # Base row for the coin
+    li   $t2, 8           # Height (8 rows)
+    li   $t3, 9           # Width (9 columns)
+    li   $t4, 0           # Row offset counter
+erase_coin_row_loop:
+    bge  $t4, $t2, erase_coin_done  # If row offset >= 8, we're done
+    add  $t5, $t1, $t4    # Current row = base row + row offset
+    li   $t6, 0          # Column offset counter
+erase_coin_col_loop:
+    bge  $t6, $t3, erase_coin_next_row  # If col offset >= 9, move to next row
+    # Compute pixel address:
+    #   pixel address = BASE_ADDRESS + (current row * 512) + (current col * 4)
+    move $t7, $t5
+    sll  $t7, $t7, 9      # Multiply current row by 512 (2^9)
+    move $t8, $t0
+    add  $t8, $t8, $t6    # Current col = base col + col offset
+    sll  $t8, $t8, 2      # Multiply current col by 4 (2^2)
+    add  $t9, $s0, $t7    # $s0 holds the framebuffer base address
+    add  $t9, $t9, $t8
+    li   $v0, 0x00000000  # Load black color directly into $v0
+    sw   $v0, 0($t9)     # Write black pixel to framebuffer
+    addi $t6, $t6, 1     # Next column offset
+    j    erase_coin_col_loop
+erase_coin_next_row:
+    addi $t4, $t4, 1     # Next row offset
+    j    erase_coin_row_loop
+erase_coin_done:
+    jr   $ra
+
+
+##########################
 erase_heart:
     # Input: $a0 = heart index to erase (0 = leftmost; 3 = far right when starting with 4 hearts)
     # Base coordinates for hearts (as drawn in your code):
