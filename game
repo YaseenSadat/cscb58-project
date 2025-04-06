@@ -84,6 +84,9 @@ c_pattern:
 
 
 coin_counter: .word 0
+coin_row:       .word  30       # Example top row where coin is drawn
+coin_col:       .word  50       # Example left column where coin is drawn
+coin_collected: .word  0        # 0 = coin not yet collected, 1 = coin already collected
 
 
 # Multi-shade reds for a more detailed red planet (top left)
@@ -1281,30 +1284,31 @@ enemy2_damage_active:
     beq  $t9, $t0, enemy_collision_reset
     j    continue_game
 
-    ################################################################
-    # Check Enemy3 Collision if enemy2 is clear.
+        ################################################################
+    # Check Enemy3 Collision
     ################################################################
 check_enemy3_collision:
-    # Reload player's coordinates.
+    # Reload player's coords into $t1 (row), $t3 (col)
     la   $t0, player_row
     lw   $t1, 0($t0)
     la   $t2, player_col
     lw   $t3, 0($t2)
-    # Load enemy3's top-left coordinates.
+
+    # Load enemy3's top-left into $t5 (row), $t7 (col)
     la   $t4, enemy3_row
     lw   $t5, 0($t4)
     la   $t6, enemy3_col
     lw   $t7, 0($t6)
 
-    # Check enemy3 collision.
+    # Check bounding-box
     addi $t8, $t1, 3          # player's bottom row
-    blt  $t8, $t5, no_collision  # if player's bottom < enemy3's top, no collision
-    addi $t8, $t5, 3          # enemy3's bottom row
-    bgt  $t1, $t8, no_collision  # if player's top > enemy3's bottom, no collision
+    blt  $t8, $t5, check_coin_collision
+    addi $t8, $t5, 3          # enemy3 bottom row
+    bgt  $t1, $t8, check_coin_collision
     addi $t8, $t3, 3          # player's right col
-    blt  $t8, $t7, no_collision  # if player's right < enemy3's left, no collision
-    addi $t8, $t7, 3          # enemy3's right col
-    bgt  $t3, $t8, no_collision  # if player's left > enemy3's right, no collision
+    blt  $t8, $t7, check_coin_collision
+    addi $t8, $t7, 3          # enemy3 right col
+    bgt  $t3, $t8, check_coin_collision
 
     # --- Collision with enemy3 detected ---
     # Check damage cooldown.
@@ -1337,6 +1341,62 @@ enemy3_damage_active:
     li   $t0, 4
     beq  $t9, $t0, enemy_collision_reset
     j    continue_game
+
+################################################################
+    # Now do the Coin Collision
+    ################################################################
+check_coin_collision:
+    # 1) If coin_collected != 0, skip
+    la   $t9, coin_collected
+    lw   $t8, 0($t9)
+    bnez $t8, no_collision
+
+    # 2) Load player bounding box into ($t1,$t3).
+    la   $t0, player_row
+    lw   $t1, 0($t0)
+    la   $t2, player_col
+    lw   $t3, 0($t2)
+
+    # 3) Load coin bounding box into ($t5,$t7).
+    la   $t4, coin_row
+    lw   $t5, 0($t4)
+    la   $t6, coin_col
+    lw   $t7, 0($t6)
+
+    # 4) AABB test
+    addi $t8, $t1, 3   # player's bottom row
+    blt  $t8, $t5, no_collision
+
+    addi $t8, $t5, 7   # coin's bottom row
+    bgt  $t1, $t8, no_collision
+
+    addi $t8, $t3, 3   # player's right col
+    blt  $t8, $t7, no_collision
+
+    addi $t8, $t7, 8   # coin's right col
+    bgt  $t3, $t8, no_collision
+
+    # --- If we get here, the player overlaps the coin ---
+    # 5) Increment coin_counter
+    la   $t9, coin_counter
+    lw   $t8, 0($t9)
+    addi $t8, $t8, 1
+    sw   $t8, 0($t9)
+
+    # 6) If coin_counter == 1, jump to game_over
+    li   $t0, 1
+    beq  $t8, $t0, game_over
+
+    # 7) Mark coin as collected (so we don’t check it again)
+    la   $t9, coin_collected
+    li   $t8, 1
+    sw   $t8, 0($t9)
+
+    # 8) (Optional) Erase coin from screen or skip future draws
+    # ...
+    j    continue_game
+
+
 
     ################################################################
     # No Collision Detected with any enemy.
