@@ -109,6 +109,10 @@ black:         .word 0x00000000     # Black (used for facial features or backgro
 hearts:                .word 4      # Player health (4 hearts)
 enemy_collision_count: .word 0      # Number of times player has collided with enemies
 
+double_jump_used: .word 0
+mid_air_jump_count: .word 0
+double_jump_available: .word 3
+
 damage_cooldown: .word 0            # > 0 = temporary invulnerability active
 damage_delay:    .word 50           # Duration of cooldown in frames (~2 seconds)
 
@@ -2921,17 +2925,40 @@ done_moving2:
     j skip_input
 
 try_jump:
+    # Check if the player is on the ground.
     la   $t0, is_jumping
     lw   $t1, 0($t0)
-    bnez $t1, game_loop
-    li   $t1, 1
-    sw   $t1, 0($t0)
-    la   $t2, player_velocity
-    li   $t3, -6
-    sw   $t3, 0($t2)
+    beqz $t1, perform_normal_jump   # If not in air, perform a normal jump
+
+    # Otherwise, player is mid-air. Check if double jump is available.
+    la   $t2, double_jump_available
+    lw   $t3, 0($t2)
+    beqz $t3, game_loop            # If already 0, extra jump not allowed; ignore jump
+
+    # Allow the extra (mid-air) jump.
+    la   $t4, player_velocity
+    li   $t5, -6                  # Set desired jump velocity (adjust as needed)
+    sw   $t5, 0($t4)
+    li   $t6, 0                   # Mark extra jump as used.
+    sw   $t6, 0($t2)
     lw   $t7, move_delay_value
     sw   $t7, move_delay_counter
-    j skip_input
+    j    skip_input
+
+perform_normal_jump:
+    # Normal ground jump.
+    li   $t1, 1
+    sw   $t1, 0($t0)              # Set is_jumping flag
+    la   $t4, player_velocity
+    li   $t5, -6                  # Set jump strength (adjust as needed)
+    sw   $t5, 0($t4)
+    lw   $t7, move_delay_value
+    sw   $t7, move_delay_counter
+    j    skip_input
+
+
+
+
 
 ######################################################################
 # GRAVITY ENGINE (platform is fully solid: no climbing from below)
@@ -2980,14 +3007,17 @@ check_horizontal_A:
     bge  $s6, $s7, check_platform_B
     li   $s7, 10              # platform A left boundary = 10
     blt  $t8, $s7, check_platform_B  # if player's right col < 10, no collision
-    # Downward collision detected for Platform A: clamp player's row to 50 - 4 = 46
+        # Collision detected for Platform A – clamp player's row to 46.
+        # Landing on Platform A – clamp player row.
     li   $t3, 46
     sw   $t3, player_row
     li   $t5, 0
     sw   $t5, player_velocity
     li   $t1, 0
     sw   $t1, is_jumping
+    # Notice: We do NOT reset double_jump_available here.
     j    done_gravity
+
 
 #---------------- Downward Collision for Platforms B–E ----------------
 # (As in your previous code; unchanged from earlier snippet.)
