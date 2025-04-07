@@ -109,8 +109,6 @@ black:         .word 0x00000000     # Black (used for facial features or backgro
 hearts:                .word 4      # Player health (4 hearts)
 enemy_collision_count: .word 0      # Number of times player has collided with enemies
 
-double_jump_used: .word 0
-mid_air_jump_count: .word 0
 double_jump_available: .word 3
 
 damage_cooldown: .word 0            # > 0 = temporary invulnerability active
