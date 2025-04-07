@@ -116,11 +116,11 @@ damage_delay:    .word 50           # Duration of cooldown in frames (~2 seconds
 ################################################################
 # PLATFORM STATE
 ################################################################
-platformE_row:         .word 30       # Fixed vertical position
-platformE_col:         .word 10       # Initial horizontal position
-platformE_width:       .word 26       # Number of pixels wide (same as Platform D)
-platformE_velocity:    .word 1        # Moves right by 1 pixel per update
-platformE_bg_buffer:   .space 104     # 26 pixels * 4 bytes per pixel
+
+platform_d_left:      .word 20      # current left column (initially 20)
+platform_d_prev_left: .word 20      # previous left column (initially 20)
+platform_d_velocity:  .word 1       # horizontal velocity (initially 1)
+platform_d_bg_buffer: .space 104    # background buffer for Platform D (26 pixels * 4 bytes)
 
 ################################################################
 # EARTH PLANET COLORS (top-right visual theme)
@@ -820,6 +820,106 @@ save_bg_loop_cols:
     blt  $t9, 4, save_bg_loop_cols
     addi $t8, $t8, 1
     blt  $t8, 4, save_bg_loop_rows
+
+
+
+###### Platform D Movement with Background Restoration and Oscillation ######
+# This code does the following:
+# 1. Restores the background from the previous frame (using a buffer).
+# 2. Updates Platform D’s horizontal position so that it oscillates between
+#    left bound (col 20) and right bound (col 64, i.e., halfway across the screen).
+# 3. Saves the new background from the updated location into the buffer.
+# 4. Draws Platform D (a 1-row, 26-pixel-wide platform in white: 0x00FFFFFF)
+#    at row 25.
+# 5. Updates the previous position variable for the next frame.
+
+# --- 1. Restore Background for Previous Platform D Position ---
+    la   $t0, platform_d_bg_buffer   # pointer to saved background buffer
+    la   $t1, platform_d_prev_left   # pointer to previous left column value
+    lw   $t2, 0($t1)                 # previous left column
+    li   $t3, 25                     # fixed row for Platform D (row 25)
+    li   $t4, 0                      # column index counter (0 to 25)
+    li   $t5, 26                     # platform width (26 pixels)
+restore_platD_bg_loop:
+    add  $t6, $t2, $t4              # current column = prev_left + index
+    mul  $t7, $t3, 512              # row offset = row * 512 bytes
+    mul  $t6, $t6, 4                # column offset = (current column * 4 bytes)
+    add  $t7, $s0, $t7              # BASE_ADDRESS + row offset
+    add  $t7, $t7, $t6              # final pixel address for restoration
+    lw   $t8, 0($t0)               # load saved background pixel from buffer
+    sw   $t8, 0($t7)               # restore that pixel onto the framebuffer
+    addi $t0, $t0, 4               # advance buffer pointer (4 bytes per pixel)
+    addi $t4, $t4, 1               # next pixel index
+    blt  $t4, $t5, restore_platD_bg_loop
+
+# --- 2. Update Platform D's Horizontal Position (Oscillation) ---
+    la   $t0, platform_d_left       # load address of current left column
+    lw   $t1, 0($t0)                # current left column value in $t1
+    la   $t2, platform_d_velocity   # load address of velocity variable
+    lw   $t3, 0($t2)                # load current velocity in $t3
+    add  $t1, $t1, $t3              # new left column = old left + velocity
+    li   $t4, 20                    # left boundary (col 20)
+    li   $t5, 50                    # right boundary (halfway across the screen)
+    bgt  $t1, $t5, reverse_right    # if new left col > right bound, reverse direction
+    blt  $t1, $t4, reverse_left     # if new left col < left bound, reverse direction
+    sw   $t1, 0($t0)                # store new left column value
+    j    update_velocity_done
+reverse_right:
+    li   $t6, -1                    # reverse velocity: now move left
+    sw   $t6, 0($t2)                # update velocity in memory
+    move $t1, $t5                  # set new left col to right boundary
+    sw   $t1, 0($t0)
+    j    update_velocity_done
+reverse_left:
+    li   $t6, 1                     # reverse velocity: now move right
+    sw   $t6, 0($t2)                # update velocity in memory
+    move $t1, $t4                  # set new left col to left boundary
+    sw   $t1, 0($t0)
+update_velocity_done:
+
+# --- 3. Save New Background for Platform D ---
+    la   $t0, platform_d_bg_buffer   # reset pointer to background buffer start
+    la   $t1, platform_d_left        # load new left column pointer
+    lw   $t2, 0($t1)                # new left column for Platform D
+    li   $t3, 25                    # fixed row for Platform D
+    li   $t4, 0                     # column index counter (0 to 25)
+    li   $t5, 26                    # platform width (26 pixels)
+save_platD_bg_loop:
+    add  $t6, $t2, $t4              # current column = new left + index
+    mul  $t7, $t3, 512              # row offset = row * 512
+    mul  $t6, $t6, 4                # column offset = current column * 4 bytes
+    add  $t7, $s0, $t7              # BASE_ADDRESS + row offset
+    add  $t7, $t7, $t6              # final pixel address to read from
+    lw   $t8, 0($t7)                # read the background pixel from the framebuffer
+    sw   $t8, 0($t0)                # save it into the background buffer
+    addi $t0, $t0, 4               # advance buffer pointer
+    addi $t4, $t4, 1               # next pixel index
+    blt  $t4, $t5, save_platD_bg_loop
+
+# --- 4. Draw Platform D at New Position ---
+    li   $t3, 25                    # fixed row for Platform D (row 25)
+    la   $t0, platform_d_left       # load new left column pointer
+    lw   $t1, 0($t0)                # new left column value
+    li   $t4, 0                     # drawing column index counter (0 to 25)
+    li   $t5, 26                    # platform width (26 pixels)
+    li   $t6, 0x00FFFFFF            # platform color (white)
+draw_platD_loop:
+    mul  $t7, $t3, 512              # compute row offset = 25 * 512
+    add  $t8, $t1, $t4              # current column = new left + index
+    mul  $t8, $t8, 4                # compute column offset in bytes
+    add  $t9, $s0, $t7              # BASE_ADDRESS + row offset
+    add  $t9, $t9, $t8              # final pixel address for drawing
+    sw   $t6, 0($t9)               # draw platform pixel (white)
+    addi $t4, $t4, 1               # increment drawing index
+    blt  $t4, $t5, draw_platD_loop
+
+# --- 5. Update Previous Position for Next Frame ---
+    la   $t0, platform_d_prev_left
+    la   $t1, platform_d_left
+    lw   $t2, 0($t1)
+    sw   $t2, 0($t0)
+
+
 
 ################################################################
 # 6) Draw Player Sprite at New Position
