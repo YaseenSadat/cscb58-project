@@ -859,7 +859,7 @@ restore_platD_bg_loop:
     lw   $t3, 0($t2)                # load current velocity in $t3
     add  $t1, $t1, $t3              # new left column = old left + velocity
     li   $t4, 20                    # left boundary (col 20)
-    li   $t5, 50                    # right boundary (halfway across the screen)
+    li   $t5, 45                    # right boundary (halfway across the screen)
     bgt  $t1, $t5, reverse_right    # if new left col > right bound, reverse direction
     blt  $t1, $t4, reverse_left     # if new left col < left bound, reverse direction
     sw   $t1, 0($t0)                # store new left column value
@@ -3030,23 +3030,34 @@ check_platform_C:
     j    done_gravity
 
 check_platform_D:
-    slti $s4, $t9, 25
-    slti $s5, $t7, 25
+    # Check if the player is falling past platform D’s top (row 25)
+    slti $s4, $t9, 25         # old_bottom < 25?
+    slti $s5, $t7, 25         # new_bottom < 25?
     beq  $s4, $zero, check_platform_E
     bnez $s5, check_platform_E
-    lw   $s6, player_col
-    addi $t8, $s6, 3
-    li   $s7, 46
-    bge  $s6, $s7, check_platform_E
-    li   $s7, 20
-    blt  $t8, $s7, check_platform_E
-    li   $t3, 21
+
+    # Load the player's horizontal coordinates
+    lw   $s6, player_col     # player's left column in $s6
+    addi $t8, $s6, 3         # player's right column (player width = 4 pixels)
+
+    # Get Platform D's current horizontal boundaries:
+    la   $t0, platform_d_left  # address of platform D's left value
+    lw   $t1, 0($t0)           # current left bound of Platform D
+    addi $t2, $t1, 26          # compute right bound = left + 26
+
+    # If player's horizontal span is outside the platform, skip collision:
+    bge  $s6, $t2, check_platform_E  # if player's left >= platform's right, no collision
+    blt  $t8, $t1, check_platform_E   # if player's right < platform's left, no collision
+
+    # Collision detected: clamp player's row to platform D top minus player height
+    li   $t3, 21              # set player_row = 21 (since platform top is at 25)
     sw   $t3, player_row
     li   $t5, 0
     sw   $t5, player_velocity
     li   $t1, 0
     sw   $t1, is_jumping
     j    done_gravity
+
 
 check_platform_E:
     slti $s4, $t9, 45
@@ -3132,25 +3143,29 @@ check_horizontal_up_C:
     j    done_gravity
 
 check_upward_D:
-    # For upward collision on Platform D (row 25)
+    # If the old top is above platform D’s top and the new top is below or at platform D’s top, we have a potential collision.
     ble  $t6, 25, check_upward_E
     bgt  $t3, 25, check_upward_E
     j    check_horizontal_up_D
+
 check_horizontal_up_D:
-    lw   $s6, player_col
-    addi $t8, $s6, 3
-    li   $s7, 46
-    bge  $s6, $s7, check_upward_E
-    li   $s7, 20
-    blt  $t8, $s7, check_upward_E
-    # Upward collision detected for Platform D: clamp player's row to 26
-    li   $t3, 26
+    lw   $s6, player_col         # player's left column
+    addi $t8, $s6, 3             # player's right column
+    la   $t0, platform_d_left    # load platform D's current left
+    lw   $t1, 0($t0)             # current left boundary
+    addi $t2, $t1, 26            # current right boundary (platform width = 26)
+    bge  $s6, $t2, check_upward_E  # if player's left >= platform's right, no collision
+    blt  $t8, $t1, check_upward_E  # if player's right < platform's left, no collision
+
+    # Collision detected from below: clamp player's row appropriately.
+    li   $t3, 26                # set player_row = 26
     sw   $t3, player_row
     li   $t5, 0
     sw   $t5, player_velocity
     li   $t1, 0
     sw   $t1, is_jumping
     j    done_gravity
+
 
 check_upward_E:
     # For upward collision on Platform E (row 45)
