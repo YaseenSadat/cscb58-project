@@ -30,133 +30,151 @@
 # - Step-by-step build in progress
 #
 #####################################################################
-
 .eqv BASE_ADDRESS 0x10008000    # Framebuffer base address
 
 .data
-# Player position and physics variables
-player_row:      .word 60        # Y-position (row)
-player_col:      .word 2         # X-position (column)
-player_velocity: .word 0         # Y velocity (positive = falling, negative = jumping up)
-is_jumping:      .word 0         # 1 if in the air, 0 if grounded
+################################################################
+# PLAYER STATE & MOVEMENT VARIABLES
+################################################################
+player_row:         .word 60        # Player Y-position (row)
+player_col:         .word 2         # Player X-position (column)
+player_velocity:    .word 0         # Vertical velocity (positive = falling, negative = jumping)
+is_jumping:         .word 0         # 1 = player is in air, 0 = on ground
+player_facing:      .word 0         # 0 = facing right, 1 = facing left
 
-# New variable to indicate facing direction: 0 = right, 1 = left
-player_facing:   .word 0
+current_player_row: .word 0         # Temporary row position
+current_player_col: .word 0         # Temporary column position
 
-# Temporary storage for the current player's base position
-current_player_row: .word 0
-current_player_col: .word 0
+player_bg_buffer:   .space 64       # Buffer for 4×4 player background (16 words = 64 bytes)
 
-# Buffer to store the 4×4 background region under the player (16 words = 64 bytes)
-player_bg_buffer: .space 64
+move_delay_counter: .word 0         # Frame countdown to delay movement
+move_delay_value:   .word 2         # Movement delay constant (affects speed)
 
-# Movement delay variables
-move_delay_counter: .word 0    # Countdown counter to control repeat movement
-move_delay_value:   .word 2    # Delay constant (adjust for speed)
+################################################################
+# ENEMY DATA (up to 3 enemies)
+################################################################
+enemy_row:          .word 20        # Enemy 1 row position
+enemy_col:          .word 0         # Enemy 1 column start
+enemy_velocity:     .word 2         # Enemy 1 speed (pixels/frame)
+enemy_bg_buffer:    .space 64       # Buffer for 4x4 enemy 1 sprite
 
-# Enemy variables:
-    enemy_row:        .word 20      # Enemy is fixed on row 20
-    enemy_col:        .word 0       # Starting column for enemy
-    enemy_velocity:   .word 2       # Horizontal speed (in pixels per frame)
-    enemy_bg_buffer:  .space 64     # 4x4 background for enemy (16 words, 64 bytes)
-    # New enemy2 variables
-    enemy2_row:        .word 45       # Start enemy2 at row 45
-    enemy2_col:        .word 0        # Initial column for enemy2 (adjust as desired)
-    enemy2_velocity:   .word 2        # Horizontal speed (same as enemy1)
-    enemy2_bg_buffer:  .space 64      # Buffer for enemy2’s 4x4 background (16 words)
-    # New enemy3 variables
-    enemy3_row:        .word 35       # Start enemy2 at row 45
-    enemy3_col:        .word 0        # Initial column for enemy2 (adjust as desired)
-    enemy3_velocity:   .word 2        # Horizontal speed (same as enemy1)
-    enemy3_bg_buffer:  .space 64      # Buffer for enemy2’s 4x4 background (16 words)
+enemy2_row:         .word 45        # Enemy 2 row
+enemy2_col:         .word 0         # Enemy 2 column
+enemy2_velocity:    .word 2         # Enemy 2 speed
+enemy2_bg_buffer:   .space 64       # Buffer for 4x4 enemy 2 sprite
 
-coin_pattern_6x7:
+enemy3_row:         .word 35        # Enemy 3 row
+enemy3_col:         .word 0         # Enemy 3 column
+enemy3_velocity:    .word 2         # Enemy 3 speed
+enemy3_bg_buffer:   .space 64       # Buffer for 4x4 enemy 3 sprite
+
+################################################################
+# COIN DATA
+################################################################
+coin_pattern_6x7:                 # 6×7 coin bitmap (used for drawing)
     .half 0x50, 0x154, 0x5A5, 0x595, 0x5A5, 0x154, 0x50
 
+coin_counter:       .word 0        # Number of coins collected
+
+coin_collected:     .word 0        # Coin 1: 0 = not collected, 1 = collected
+coin_row:           .word 30       # Coin 1 row
+coin_col:           .word 50       # Coin 1 column
+
+coin2_row:          .word 17       # Coin 2 row
+coin2_col:          .word 30       # Coin 2 column
+coin2_collected:    .word 0        # Coin 2: 0 = not collected, 1 = collected
+
+coin3_row:          .word 20       # Coin 3 row
+coin3_col:          .word 90       # Coin 3 column
+coin3_collected:    .word 0        # Coin 3: 0 = not collected, 1 = collected
+
+coin4_row:          .word 37       # Coin 4 row
+coin4_col:          .word 105      # Coin 4 column
+coin4_collected:    .word 0        # Coin 4: 0 = not collected, 1 = collected
+
+################################################################
+# COLOR DEFINITIONS
+################################################################
+# Red planet palette (top-left area)
+darkest_red:   .word 0x008B0000     # Dark red
+dark_red:      .word 0x00B22222     # Firebrick
+mid_red:       .word 0x00CD5C5C     # IndianRed
+light_red:     .word 0x00FA8072     # Salmon
+
+black:         .word 0x00000000     # Black (used for facial features or backgrounds)
+
+################################################################
+# PLAYER HEALTH & DAMAGE STATE
+################################################################
+hearts:                .word 4      # Player health (4 hearts)
+enemy_collision_count: .word 0      # Number of times player has collided with enemies
+
+damage_cooldown: .word 0            # > 0 = temporary invulnerability active
+damage_delay:    .word 50           # Duration of cooldown in frames (~2 seconds)
 
 
-coin_counter: .word 0
-coin_collected: .word 0       # 0 = coin2 not collected, 1 = collected
-coin_row:       .word  30       # Example top row where coin is drawn
-coin_col:       .word  50       # Example left column where coin is drawn
+################################################################
+# PLATFORM STATE
+################################################################
+platformE_row:         .word 30       # Fixed vertical position
+platformE_col:         .word 10       # Initial horizontal position
+platformE_width:       .word 26       # Number of pixels wide (same as Platform D)
+platformE_velocity:    .word 1        # Moves right by 1 pixel per update
+platformE_bg_buffer:   .space 104     # 26 pixels * 4 bytes per pixel
 
-coin2_row:       .word 17      # Initial top row for coin 2 (example)
-coin2_col:       .word 30      # Initial left column for coin 2 (example)
-coin2_collected: .word 0       # 0 = coin2 not collected, 1 = collected
+################################################################
+# EARTH PLANET COLORS (top-right visual theme)
+################################################################
+# These define a multi-shade palette for Earth-like visuals
+earth_dark:    .word 0x00004080     # Dark ocean blue (R=0, G=64, B=128)
+earth_ocean:   .word 0x000080FF     # Bright ocean (R=0, G=128, B=255)
+earth_land:    .word 0x00008000     # Land green (R=0, G=128, B=0)
+earth_clouds:  .word 0x00FFFFFF     # Clouds (white)
 
-
-
-# Multi-shade reds for a more detailed red planet (top left)
-darkest_red:   .word 0x008B0000   # Dark red
-dark_red:      .word 0x00B22222   # Firebrick
-mid_red:       .word 0x00CD5C5C   # IndianRed
-light_red:     .word 0x00FA8072   # Salmon
-
-# Define black color for facial features
-black: .word 0x00000000
-
-hearts: .word 4
-enemy_collision_count: .word 0
-
-
-# New variables for damage cooldown:
-damage_cooldown: .word 0    # When > 0, player is temporarily invulnerable.
-damage_delay:    .word 50   # Delay value in frames (~2 seconds)
-
-# -------------------------------------------------------------------
-# Earth planet colors (for an Earth‐like planet, top right):
-#   - earth_dark:    dark ocean
-#   - earth_ocean:   bright ocean blue
-#   - earth_land:    green (land)
-#   - earth_clouds:  white (clouds)
-# -------------------------------------------------------------------
-earth_dark:    .word 0x00004080   # Dark ocean (R=0, G=64, B=128)
-earth_ocean:   .word 0x000080FF   # Ocean blue (R=0, G=128, B=255)
-earth_land:    .word 0x00008000   # Land green (R=0, G=128, B=0)
-earth_clouds:  .word 0x00FFFFFF   # Clouds (white)
-
+################################################################
+# MAIN GAME ENTRY
+################################################################
 .text
 main:
     ################################################################
     # START SCREEN
     ################################################################
-    jal start_screen       # Call the start screen subroutine
+    jal start_screen               # Call start screen subroutine
 
 main_game_loop:
     ################################################################
-    # INITIALIZE CONSTANTS
+    # INITIALIZE CONSTANT COLORS AND ADDRESSES
     ################################################################
-    li   $s0, BASE_ADDRESS        # Framebuffer base address
-    li   $s1, 0x00808080          # Grey color for platforms
-    li   $s2, 0x00FF0000          # Red color for player
-    li   $s3, 0x00000080          # Dark blue background
+    li   $s0, BASE_ADDRESS         # Load framebuffer base address
+    li   $s1, 0x00808080           # Platform color (grey)
+    li   $s2, 0x00FF0000           # Player color (red)
+    li   $s3, 0x00000080           # Background color (dark blue)
 
     ################################################################
-    # DRAW BACKGROUND (64 rows × 128 cols)
+    # DRAW BACKGROUND (64 rows × 128 columns)
     ################################################################
-    li   $t4, 0                 # row = 0
+    li   $t4, 0                    # Start row = 0
 bg_row_loop:
-    li   $t5, 0                 # col = 0
+    li   $t5, 0                    # Start column = 0
 bg_col_loop:
-    mul  $t6, $t4, 512          # row offset (512 bytes per row)
-    mul  $t7, $t5, 4            # column offset (4 bytes per pixel)
-    add  $t8, $s0, $t6          # base address + row offset
-    add  $t8, $t8, $t7          # + column offset
-    sw   $s3, 0($t8)            # set pixel to dark blue
-    addi $t5, $t5, 1
-    blt  $t5, 128, bg_col_loop
-    addi $t4, $t4, 1
-    blt  $t4, 64, bg_row_loop
-
+    mul  $t6, $t4, 512             # Calculate row offset (512 bytes/row)
+    mul  $t7, $t5, 4               # Calculate column offset (4 bytes/pixel)
+    add  $t8, $s0, $t6             # base + row offset
+    add  $t8, $t8, $t7             # base + row + column offset
+    sw   $s3, 0($t8)               # Set pixel to dark blue
+    addi $t5, $t5, 1               # Next column
+    blt  $t5, 128, bg_col_loop     # Loop until column < 128
+    addi $t4, $t4, 1               # Next row
+    blt  $t4, 64, bg_row_loop      # Loop until row < 64
 
 ################################################################
-# DRAW STARS (plus-shaped, 4x4 pixel stars, each row has unique spacing)
+# DRAW STARS (Each row has its own position and spacing)
 ################################################################
 
 # Row 1
-li $s4, 4
-li $s5, 4
-li $t8, 20
+li $s4, 4                         # Fixed Y-position (row) for stars
+li $s5, 4                         # Start column for this row
+li $t8, 20                        # Spacing between stars
 jal draw_star_row
 
 # Row 2
@@ -177,40 +195,44 @@ li $s5, 8
 li $t8, 18
 jal draw_star_row
 
-j stars_done
+j stars_done                      # Jump past draw_star_row definitions
 
 ################################################################
 # Subroutine: draw_star_row
-# $s4 = fixed row, $s5 = starting col, $t8 = column gap
+# Draws a row of plus-shaped stars
+# $s4 = fixed row position
+# $s5 = starting column
+# $t8 = gap between stars
 ################################################################
 draw_star_row:
-    li $t0, 124              # Max col
-    move $t7, $s5            # current star col
+    li $t0, 124              # Maximum column value
+    move $t7, $s5            # Current column for star placement
 
 next_star:
-    bgt $t7, $t0, end_star_row
-    li  $t9, 0x00FFFF00      # Yellow color
+    bgt $t7, $t0, end_star_row   # Exit if past screen width
+    li  $t9, 0x00FFFF00          # Star color (yellow)
 
-    # Draw vertical line (center of plus)
+    # Draw vertical line (3 pixels tall, centered)
     li   $t1, 0
 draw_v:
     bgt  $t1, 2, done_v
-    add  $t2, $s4, $t1        # row = base row + offset
-    addi $t3, $t7, 1          # col = base col + 1
-    mul  $t4, $t2, 512        # row offset
-    mul  $t5, $t3, 4          # col offset
+    add  $t2, $s4, $t1            # Row = base row + offset
+    addi $t3, $t7, 1              # Col = center of plus
+    mul  $t4, $t2, 512            # Row offset
+    mul  $t5, $t3, 4              # Column offset
     add  $t6, $s0, $t4
     add  $t6, $t6, $t5
-    sw   $t9, 0($t6)
+    sw   $t9, 0($t6)              # Store yellow pixel
     addi $t1, $t1, 1
     j draw_v
 done_v:
-    # Draw horizontal line (center of plus)
+
+    # Draw horizontal line (3 pixels wide, centered)
     li $t1, 0
 draw_h:
     bgt  $t1, 2, done_h
-    addi $t2, $s4, 1          # fixed center row
-    add  $t3, $t7, $t1        # col = base col + offset
+    addi $t2, $s4, 1              # Fixed center row
+    add  $t3, $t7, $t1            # Col = base col + offset
     mul  $t4, $t2, 512
     mul  $t5, $t3, 4
     add  $t6, $s0, $t4
@@ -219,47 +241,46 @@ draw_h:
     addi $t1, $t1, 1
     j draw_h
 done_h:
-    add $t7, $t7, $t8         # next star col
+
+    add $t7, $t7, $t8             # Move to next star column
     j next_star
+
 end_star_row:
     jr $ra
 
 stars_done:
 
-    ################################################################
-    # DRAW BLACK RECTANGLE (Top-right part of background)
-    # Rows 1–10, Cols 95–125
-    ################################################################
-    li   $t0, 3           # Start row
+################################################################
+# DRAW BLACK RECTANGLE (Top-right, rows 3–9, cols 95–126)
+################################################################
+li   $t0, 3                      # Start row
 black_rect_row_loop:
-    li   $t1, 95         # Start col
+    li   $t1, 95                 # Start column
 black_rect_col_loop:
-    mul  $t2, $t0, 512    # row offset in bytes
-    mul  $t3, $t1, 4      # col offset in bytes
-    add  $t4, $s0, $t2    # base + row offset
-    add  $t4, $t4, $t3    # + col offset
-    li   $t5, 0x00000000  # black color
-    sw   $t5, 0($t4)      # draw black pixel
+    mul  $t2, $t0, 512           # Row offset
+    mul  $t3, $t1, 4             # Column offset
+    add  $t4, $s0, $t2
+    add  $t4, $t4, $t3
+    li   $t5, 0x00000000         # Color: black
+    sw   $t5, 0($t4)             # Draw black pixel
     addi $t1, $t1, 1
-    blt  $t1, 127, black_rect_col_loop  # end at col 125
+    blt  $t1, 127, black_rect_col_loop
     addi $t0, $t0, 1
     ble  $t0, 9, black_rect_row_loop
 
-    ################################################################
-    # DRAW WHITE BORDER AROUND BLACK RECTANGLE (1 pixel bigger)
-    # This border will now be drawn after the black rectangle,
-    # so it will be visible on all sides.
-    ################################################################
-    li   $t5, 0x00FFFFFF      # White color
-    li   $t0, 2               # Start row (1 row above the black rect)
+################################################################
+# DRAW WHITE BORDER AROUND RECTANGLE (1 pixel wider on all sides)
+################################################################
+li   $t5, 0x00FFFFFF             # White color
+li   $t0, 2                      # Start row (1 above black rect)
 white_border_row_loop:
-    li   $t1, 94            # Start col (1 col left of the black rect)
+    li   $t1, 94                 # Start col (1 left of black rect)
 white_border_col_loop:
-    # Draw only border pixels (top, bottom, left, or right)
-    li   $t6, 2           # top border row
-    li   $t7, 10          # bottom border row
-    li   $t8, 94          # left border col
-    li   $t9, 126         # right border col
+    # Define edge conditions
+    li   $t6, 2                  # Top row
+    li   $t7, 10                 # Bottom row
+    li   $t8, 94                 # Left col
+    li   $t9, 126                # Right col
     beq  $t0, $t6, draw_white_border
     beq  $t0, $t7, draw_white_border
     beq  $t1, $t8, draw_white_border
@@ -267,11 +288,11 @@ white_border_col_loop:
     j skip_white_border
 
 draw_white_border:
-    mul  $s1, $t0, 512     # row offset in bytes
-    mul  $s2, $t1, 4       # col offset in bytes
+    mul  $s1, $t0, 512
+    mul  $s2, $t1, 4
     add  $s3, $s0, $s1
     add  $s3, $s3, $s2
-    sw   $t5, 0($s3)       # write white pixel
+    sw   $t5, 0($s3)
 
 skip_white_border:
     addi $t1, $t1, 1
@@ -279,73 +300,68 @@ skip_white_border:
     addi $t0, $t0, 1
     ble  $t0, 10, white_border_row_loop
 
-     ################################################################
-    # DRAW BLACK RECTANGLE (duplicate for columns 5–25)
-    # Rows 3–10, Cols 5–35 (exact size)
-    ################################################################
-    li   $t0, 3           # Start row (same as original)
+################################################################
+# DRAW SECOND BLACK RECTANGLE (Left side, rows 3–13, cols 5–36)
+################################################################
+li   $t0, 3
 black_rect2_row_loop:
-    li   $t1, 5           # Start col now 5
+    li   $t1, 5
 black_rect2_col_loop:
-    mul  $t2, $t0, 512    # row offset in bytes
-    mul  $t3, $t1, 4      # col offset in bytes
-    add  $t4, $s0, $t2    # base address + row offset
-    add  $t4, $t4, $t3    # add column offset
-    li   $t5, 0x00000000  # black color
-    sw   $t5, 0($t4)      # draw black pixel
+    mul  $t2, $t0, 512
+    mul  $t3, $t1, 4
+    add  $t4, $s0, $t2
+    add  $t4, $t4, $t3
+    li   $t5, 0x00000000
+    sw   $t5, 0($t4)
     addi $t1, $t1, 1
-    blt  $t1, 36, black_rect2_col_loop  # Loop while col < 26 (i.e. 5 to 25)
+    blt  $t1, 37, black_rect2_col_loop
     addi $t0, $t0, 1
-    ble  $t0, 13, black_rect2_row_loop  # Loop while row <= 10
+    ble  $t0, 13, black_rect2_row_loop
 
-    ################################################################
-    # DRAW WHITE BORDER AROUND BLACK RECTANGLE (duplicate for columns 5–25)
-    # This border will be drawn 1 unit outside the black rectangle.
-    ################################################################
-    li   $t5, 0x00FFFFFF      # White color
-    li   $t0, 2               # Start row (1 unit above row 3)
+################################################################
+# DRAW WHITE BORDER AROUND SECOND RECTANGLE (1 pixel buffer)
+################################################################
+li   $t5, 0x00FFFFFF
+li   $t0, 2                      # Start row (1 above rect)
 white_border2_row_loop:
-    li   $t1, 4               # Start col (1 unit left of col 5)
+    li   $t1, 4                  # Start col (1 left of rect)
 white_border2_col_loop:
-    # Define border boundaries:
-    li   $t6, 2           # top border row (row 2)
-    li   $t7, 13          # bottom border row (row 10)
-    li   $t8, 4           # left border col (col 4)
-    li   $t9, 36          # right border col (col 26)
+    li   $t6, 2                  # Top
+    li   $t7, 13                 # Bottom
+    li   $t8, 4                  # Left
+    li   $t9, 37                 # Right
     beq  $t0, $t6, draw_white_border2
     beq  $t0, $t7, draw_white_border2
     beq  $t1, $t8, draw_white_border2
     beq  $t1, $t9, draw_white_border2
-    j    skip_white_border2
+    j skip_white_border2
 
 draw_white_border2:
-    mul  $s1, $t0, 512     # Compute row offset in bytes
-    mul  $s2, $t1, 4       # Compute col offset in bytes
-    add  $s3, $s0, $s1     # Base address + row offset
-    add  $s3, $s3, $s2     # Add column offset to get pixel address
-    sw   $t5, 0($s3)       # Write white color
+    mul  $s1, $t0, 512
+    mul  $s2, $t1, 4
+    add  $s3, $s0, $s1
+    add  $s3, $s3, $s2
+    sw   $t5, 0($s3)
 
 skip_white_border2:
     addi $t1, $t1, 1
-    ble  $t1, 36, white_border2_col_loop
+    ble  $t1, 37, white_border2_col_loop
     addi $t0, $t0, 1
     ble  $t0, 13, white_border2_row_loop
 
-
-##############################################################
-# DRAW HEARTS (4 red hearts, top-right, inside black rectangle)
-##############################################################
-li   $t0, 0x00FF0000    # Red color
-li   $t1, 4             # Start row
-li   $t2, 98            # NEW: Start col (moved left from 107 to 93)
-li   $t3, 4             # NEW: Number of hearts = 4
-
+################################################################
+# DRAW HEARTS (Top-right corner, 4 red heart icons)
+################################################################
+li   $t0, 0x00FF0000             # Heart color (red)
+li   $t1, 4                      # Starting row
+li   $t2, 98                     # Starting column
+li   $t3, 4                      # Number of hearts
 
 heart_loop:
     beq  $t3, $zero, hearts_done
 
-    # Draw: R R _ R R
-    li $t4, 0   # row offset
+    # Heart Row 0: R R _ R R
+    li $t4, 0
     li $t5, 0
 heart_row0:
     bge $t5, 5, heart_row0_done
@@ -368,7 +384,7 @@ next_col0:
     j heart_row0
 heart_row0_done:
 
-    # Draw: R R R R R
+    # Heart Row 1: R R R R R
     li $t4, 1
     li $t5, 0
 heart_row1:
@@ -384,7 +400,7 @@ heart_row1:
     j heart_row1
 heart_row1_done:
 
-    # Draw: _ R R R _
+    # Heart Row 2: _ R R R _
     li $t4, 2
     li $t5, 0
 heart_row2:
@@ -411,7 +427,7 @@ skip_pixel2:
     j heart_row2
 heart_row2_done:
 
-    # Draw: _ _ R _ _
+    # Heart Row 3: _ _ R _ _
     li $t4, 3
     addi $t7, $t2, 2
     add $t8, $t1, $t4
@@ -421,47 +437,55 @@ heart_row2_done:
     add  $s2, $s2, $s1
     sw   $t0, 0($s2)
 
-    # Advance to next heart (7 columns apart)
+    # Move to next heart (7 pixels apart)
     addi $t2, $t2, 7
     addi $t3, $t3, -1
     j heart_loop
 
 hearts_done:
 
-    ################################################################
-    # DRAW RED PLANET (TOP LEFT, swirl pattern)
-    ################################################################
-    li   $t0, 15         # red planet base row
-    li   $t1, 5         # red planet base col
-    li   $t2, 24        # bounding box size
-    li   $t3, 12        # radius
-    addu $t8, $t1, $t3  # center_col = base col + 12
-    addu $t9, $t0, $t3  # center_row = base row + 12
-    li   $t4, 0         # Outer loop counter (i)
+
+ ################################################################
+# DRAW RED PLANET (Top-left corner, swirl pattern)
+################################################################
+li   $t0, 15         # Base row for red planet
+li   $t1, 5          # Base column for red planet
+li   $t2, 24         # Planet bounding box (24x24)
+li   $t3, 12         # Radius = 12
+addu $t8, $t1, $t3   # center_col = base_col + radius
+addu $t9, $t0, $t3   # center_row = base_row + radius
+li   $t4, 0          # Outer loop counter (row index)
+
 planet_row_loop:
     bge  $t4, $t2, planet_done
-    addu $t6, $t0, $t4      # current_row = base row + i
-    li   $t5, 0           # Inner loop counter (j)
+    addu $t6, $t0, $t4         # current_row = base_row + i
+    li   $t5, 0                # Inner loop counter (col index)
+
 planet_col_loop:
     bge  $t5, $t2, planet_next_row
-    addu $t7, $t1, $t5      # current_col = base col + j
-    sub  $a0, $t7, $t8      # dx = current_col - center_col
-    sub  $a1, $t6, $t9      # dy = current_row - center_row
-    mul  $v1, $a0, $a0      # dx^2
-    mul  $t3, $a1, $a1      # dy^2 (temporary)
-    addu $v1, $v1, $t3      # distance^2
-    li   $t3, 144          # 12^2 = 144
-    bgt  $v1, $t3, planet_skip_pixel
-    sll  $v0, $a1, 1       # pattern: (2*dy + dx) >> 2
+    addu $t7, $t1, $t5         # current_col = base_col + j
+    sub  $a0, $t7, $t8         # dx = col - center_col
+    sub  $a1, $t6, $t9         # dy = row - center_row
+    mul  $v1, $a0, $a0         # dx^2
+    mul  $t3, $a1, $a1         # dy^2
+    addu $v1, $v1, $t3         # distance^2 = dx^2 + dy^2
+    li   $t3, 144              # radius^2 = 12^2
+    bgt  $v1, $t3, planet_skip_pixel  # Skip if outside circle
+
+    # Swirl pattern (2*dy + dx) >> 2 mod 4
+    sll  $v0, $a1, 1
     addu $v0, $v0, $a0
     sra  $v0, $v0, 2
-    andi $v0, $v0, 3      # mod 4
+    andi $v0, $v0, 3
+
+    # Select shade of red based on pattern
     li   $t3, 0
     beq  $v0, $zero, pick_darkest
     li   $t3, 1
     beq  $v0, $t3, pick_dark
     li   $t3, 2
     beq  $v0, $t3, pick_mid
+
 pick_light:
     lw   $t3, light_red
     j    planet_set_pixel
@@ -473,54 +497,65 @@ pick_dark:
     j    planet_set_pixel
 pick_darkest:
     lw   $t3, darkest_red
+
 planet_set_pixel:
-    mul  $v1, $t6, 512         # row offset in bytes
-    sll  $a0, $t7, 2           # col offset in bytes
-    addu $v1, $s0, $v1        # base + row offset
-    addu $v1, $v1, $a0        # final pixel address
-    sw   $t3, 0($v1)          # store chosen red color
+    mul  $v1, $t6, 512
+    sll  $a0, $t7, 2
+    addu $v1, $s0, $v1
+    addu $v1, $v1, $a0
+    sw   $t3, 0($v1)           # Draw selected red shade
+
 planet_skip_pixel:
-    addi $t5, $t5, 1         # j++
+    addi $t5, $t5, 1
     j    planet_col_loop
+
 planet_next_row:
-    addi $t4, $t4, 1         # i++
+    addi $t4, $t4, 1
     j    planet_row_loop
+
 planet_done:
 
-    ################################################################
-    # DRAW EARTH-LIKE PLANET (TOP RIGHT, swirl pattern)
-    ################################################################
-    li   $t0, 12         # earth planet base row
-    li   $t1, 102       # earth planet base col
-    li   $t2, 24        # bounding box size
-    li   $t3, 12        # radius
-    addu $t8, $t1, $t3  # center_col = base col + 12
-    addu $t9, $t0, $t3  # center_row = base row + 12
-    li   $t4, 0         # Outer loop counter (i)
+################################################################
+# DRAW EARTH-LIKE PLANET (Top-right corner, swirl pattern)
+################################################################
+li   $t0, 12         # Base row for Earth
+li   $t1, 102        # Base column for Earth
+li   $t2, 24         # Bounding box (24x24)
+li   $t3, 12         # Radius = 12
+addu $t8, $t1, $t3   # center_col
+addu $t9, $t0, $t3   # center_row
+li   $t4, 0          # Row loop counter
+
 earth_row_loop:
     bge  $t4, $t2, earth_done
-    addu $t6, $t0, $t4      # current_row = base row + i
-    li   $t5, 0           # Inner loop counter (j)
+    addu $t6, $t0, $t4         # current_row
+    li   $t5, 0                # Column loop counter
+
 earth_col_loop:
     bge  $t5, $t2, earth_next_row
-    addu $t7, $t1, $t5      # current_col = base col + j
-    sub  $a0, $t7, $t8      # dx = current_col - center_col
-    sub  $a1, $t6, $t9      # dy = current_row - center_row
-    mul  $v1, $a0, $a0      # dx^2
-    mul  $t3, $a1, $a1      # dy^2 (temporary)
-    addu $v1, $v1, $t3      # distance^2
-    li   $t3, 144          # 12^2 = 144
+    addu $t7, $t1, $t5         # current_col
+    sub  $a0, $t7, $t8         # dx
+    sub  $a1, $t6, $t9         # dy
+    mul  $v1, $a0, $a0         # dx^2
+    mul  $t3, $a1, $a1         # dy^2
+    addu $v1, $v1, $t3         # distance^2
+    li   $t3, 144              # radius^2
     bgt  $v1, $t3, earth_skip_pixel
-    sll  $v0, $a1, 1       # pattern: (2*dy + dx) >> 2
+
+    # Swirl pattern
+    sll  $v0, $a1, 1
     addu $v0, $v0, $a0
     sra  $v0, $v0, 2
-    andi $v0, $v0, 3      # mod 4
+    andi $v0, $v0, 3
+
+    # Choose Earth color based on pattern value
     li   $t3, 0
     beq  $v0, $zero, pick_earth_dark
     li   $t3, 1
     beq  $v0, $t3, pick_earth_ocean
     li   $t3, 2
     beq  $v0, $t3, pick_earth_land
+
 pick_earth_clouds:
     lw   $t3, earth_clouds
     j    earth_set_pixel
@@ -532,26 +567,30 @@ pick_earth_ocean:
     j    earth_set_pixel
 pick_earth_dark:
     lw   $t3, earth_dark
+
 earth_set_pixel:
-    mul  $v1, $t6, 512      # row offset in bytes
-    sll  $a0, $t7, 2        # col offset in bytes
-    addu $v1, $s0, $v1      # base address
-    addu $v1, $v1, $a0      # final pixel address
-    sw   $t3, 0($v1)        # store chosen earth color
+    mul  $v1, $t6, 512
+    sll  $a0, $t7, 2
+    addu $v1, $s0, $v1
+    addu $v1, $v1, $a0
+    sw   $t3, 0($v1)
+
 earth_skip_pixel:
-    addi $t5, $t5, 1       # j++
+    addi $t5, $t5, 1
     j    earth_col_loop
+
 earth_next_row:
-    addi $t4, $t4, 1       # i++
+    addi $t4, $t4, 1
     j    earth_row_loop
+
 earth_done:
 
 ################################################################
-# DRAW PLATFORMS (A–E)
+# DRAW PLATFORMS A–E (floating grey blocks)
 ################################################################
-li $t9, 0x00808080       # Grey color
+li $t9, 0x00808080           # Grey platform color
 
-# Platform A: row 50, columns 10 to 30 (floating platform)
+# Platform A: row 50, cols 10–30
 li $t4, 50
 li $t5, 10
 platA_loop:
@@ -563,7 +602,7 @@ platA_loop:
     addi $t5, $t5, 1
     blt  $t5, 31, platA_loop
 
-# Platform B: row 40, columns 40 to 70
+# Platform B: row 40, cols 40–70
 li $t4, 40
 li $t5, 40
 platB_loop:
@@ -575,7 +614,7 @@ platB_loop:
     addi $t5, $t5, 1
     blt  $t5, 71, platB_loop
 
-# Platform C: row 30, columns 80 to 105
+# Platform C: row 30, cols 80–105
 li $t4, 30
 li $t5, 80
 platC_loop:
@@ -587,7 +626,7 @@ platC_loop:
     addi $t5, $t5, 1
     blt  $t5, 106, platC_loop
 
-# Platform D: row 25, columns 20 to 45
+# Platform D: row 25, cols 20–45
 li $t4, 25
 li $t5, 20
 platD_loop:
@@ -599,7 +638,7 @@ platD_loop:
     addi $t5, $t5, 1
     blt  $t5, 46, platD_loop
 
-# Platform E: row 45, columns 95 to 120
+# Platform E: row 45, cols 95–120
 li $t4, 45
 li $t5, 95
 platE_loop:
@@ -611,88 +650,84 @@ platE_loop:
     addi $t5, $t5, 1
     blt  $t5, 121, platE_loop
 
+################################################################
+# DRAW COINS (8x8 sprites using draw_gold_coin_new)
+################################################################
+li $a0, 32      # Coin 1 top row
+li $a1, 50      # Coin 1 left col
+jal draw_gold_coin_new
 
- # ------ Draw Gold Coin (8x8) -------
-    li $a0, 32      # top row for coin
-    li $a1, 50      # left column for coin
-    jal draw_gold_coin_new
-    
- # ------ Draw Gold Coin (8x8) -------
-    li $a0, 17      # top row for coin
-    li $a1, 30      # left column for coin
-    jal draw_gold_coin_new
- 
-  # ------ Draw Gold Coin (8x8) -------
-    li $a0, 22      # top row for coin
-    li $a1, 90      # left column for coin
-    jal draw_gold_coin_new
- 
- # ------ Draw Gold Coin (8x8) -------
-    li $a0, 37      # top row for coin
-    li $a1, 105      # left column for coin
-    jal draw_gold_coin_new
-           
-    
-    ################################################################
-    # INIT PREVIOUS PLAYER POSITION
-    ################################################################
-    li   $s6, 60
-    li   $s7, 2
+li $a0, 17      # Coin 2 top row
+li $a1, 30      # Coin 2 left col
+jal draw_gold_coin_new
+
+li $a0, 22      # Coin 3 top row
+li $a1, 90      # Coin 3 left col
+jal draw_gold_coin_new
+
+li $a0, 37      # Coin 4 top row
+li $a1, 105     # Coin 4 left col
+jal draw_gold_coin_new
+
+################################################################
+# INIT PREVIOUS PLAYER POSITION
+################################################################
+li   $s6, 60     # Initial player row
+li   $s7, 2      # Initial player column
 
 ######################################################################
 # MAIN GAME LOOP
 ######################################################################
 game_loop:
-    ################################################################
-    # 1) Handle Continuous Input with Delay
-    ################################################################
-    li   $t0, 0xffff0000      # Keyboard MMIO base
-    lw   $t1, 0($t0)          # Read key status
-    beq  $t1, $zero, reset_delay   # No key pressed: reset delay counter
 
-    lw   $t2, move_delay_counter   # Load delay counter
-    bnez $t2, decrement_delay       # If counter is not zero, skip input
 
-    # A key is pressed and delay counter is 0; process input:
-    lw   $t3, 4($t0)          # ASCII code
-    li   $t4, 97              # 'a'
-    beq  $t3, $t4, move_left
-    li   $t4, 100             # 'd'
-    beq  $t3, $t4, move_right
-    li   $t4, 119             # 'w'
-    beq  $t3, $t4, try_jump
+################################################################
+# 1) Handle Continuous Input with Delay
+################################################################
+li   $t0, 0xffff0000         # Keyboard MMIO base
+lw   $t1, 0($t0)             # Read key status
+beq  $t1, $zero, reset_delay # No key pressed: reset delay counter
+
+lw   $t2, move_delay_counter # Load movement delay counter
+bnez $t2, decrement_delay    # If not zero, skip input processing
+
+# A key is pressed and delay counter is zero
+lw   $t3, 4($t0)             # Read ASCII key code
+li   $t4, 97                 # 'a'
+beq  $t3, $t4, move_left
+li   $t4, 100                # 'd'
+beq  $t3, $t4, move_right
+li   $t4, 119                # 'w'
+beq  $t3, $t4, try_jump
 
 go_to_start_screen:
-    jal start_screen      # Go to start screen
-    # After returning from start screen, reset state:
-    li   $t0, 60          # initial player_row
-    sw   $t0, player_row
-    li   $t0, 2           # initial player_col
-    sw   $t0, player_col
-    li   $t0, 0           # reset player_velocity
-    sw   $t0, player_velocity
-    li   $t0, 0           # reset is_jumping
-    sw   $t0, is_jumping
-    j game_loop           # Jump back into the game loop
-
+jal  start_screen            # Go to start screen
+# After returning from start screen, reset game state:
+li   $t0, 60
+sw   $t0, player_row
+li   $t0, 2
+sw   $t0, player_col
+li   $t0, 0
+sw   $t0, player_velocity
+sw   $t0, is_jumping
+j    game_loop
 
 decrement_delay:
-    lw   $t2, move_delay_counter
-    addi $t2, $t2, -1
-    sw   $t2, move_delay_counter
-reset_delay:
-    # If no key is pressed, reset the counter to 0
-    li   $t2, 0
-    sw   $t2, move_delay_counter
-    j skip_input
+lw   $t2, move_delay_counter
+addi $t2, $t2, -1
+sw   $t2, move_delay_counter
 
+reset_delay:
+li   $t2, 0
+sw   $t2, move_delay_counter
+j    skip_input
+
+################################################################
+# 2) Restore Old Player Background from Buffer (4x4 pixels)
+################################################################
 skip_input:
-    ################################################################
-    # 2) Restore Old Player Background from Buffer
-    # (Iterate 4 rows × 4 cols)
-    ################################################################
-    la   $t3, player_bg_buffer
-    li   $t8, 0
+la   $t3, player_bg_buffer
+li   $t8, 0
 restore_bg_loop_rows:
     li   $t9, 0
 restore_bg_loop_cols:
@@ -710,59 +745,61 @@ restore_bg_loop_cols:
     addi $t8, $t8, 1
     blt  $t8, 4, restore_bg_loop_rows
 
-    ################################################################
-    # 3) Apply Gravity (with floating platform collision)
-    ################################################################
-    jal  apply_gravity
+################################################################
+# 3) Apply Gravity to Player
+################################################################
+jal apply_gravity
 
-    ################################################################
-    # 4) Clamp & Save New Player Position
-    # (Max row = 60, max col = 124 for 4x4 sprite)
-    ################################################################
-    la   $t0, player_row
-    la   $t1, player_col
-    lw   $t4, 0($t0)
-    lw   $t5, 0($t1)
-    li   $t6, 0
-    blt  $t4, $t6, fix_top
-    li   $t6, 60
-    bgt  $t4, $t6, fix_bottom
-    j    skip_row_clamp
+################################################################
+# 4) Clamp & Save New Player Position
+################################################################
+la   $t0, player_row
+la   $t1, player_col
+lw   $t4, 0($t0)
+lw   $t5, 0($t1)
+
+# Clamp row between 0 and 60
+li   $t6, 0
+blt  $t4, $t6, fix_top
+li   $t6, 60
+bgt  $t4, $t6, fix_bottom
+j    skip_row_clamp
 fix_top:
-    li   $t4, 0
-    sw   $t4, player_row
-    j    skip_row_clamp
+li   $t4, 0
+sw   $t4, player_row
+j    skip_row_clamp
 fix_bottom:
-    li   $t4, 60
-    sw   $t4, player_row
+li   $t4, 60
+sw   $t4, player_row
 skip_row_clamp:
 
-    li   $t6, 0
-    blt  $t5, $t6, fix_left
-    li   $t6, 124
-    bgt  $t5, $t6, fix_right
-    j    skip_col_clamp
+# Clamp col between 0 and 124
+li   $t6, 0
+blt  $t5, $t6, fix_left
+li   $t6, 124
+bgt  $t5, $t6, fix_right
+j    skip_col_clamp
 fix_left:
-    li   $t5, 0
-    sw   $t5, player_col
-    j    skip_col_clamp
+li   $t5, 0
+sw   $t5, player_col
+j    skip_col_clamp
 fix_right:
-    li   $t5, 124
-    sw   $t5, player_col
+li   $t5, 124
+sw   $t5, player_col
 skip_col_clamp:
 
-    lw   $t5, 0($t1)
-    la   $t7, current_player_row
-    sw   $t4, 0($t7)
-    la   $t7, current_player_col
-    sw   $t5, 0($t7)
+# Save new position to current_* variables
+lw   $t5, 0($t1)
+la   $t7, current_player_row
+sw   $t4, 0($t7)
+la   $t7, current_player_col
+sw   $t5, 0($t7)
 
-    ################################################################
-    # 5) Save New Background into Buffer
-    # (Iterate 4 rows x 4 cols)
-    ################################################################
-    la   $t3, player_bg_buffer
-    li   $t8, 0
+################################################################
+# 5) Save New Background into Buffer (4x4)
+################################################################
+la   $t3, player_bg_buffer
+li   $t8, 0
 save_bg_loop_rows:
     la   $t7, current_player_row
     lw   $t5, 0($t7)
@@ -784,140 +821,136 @@ save_bg_loop_cols:
     addi $t8, $t8, 1
     blt  $t8, 4, save_bg_loop_rows
 
-    ################################################################
-    # 6) Draw Player at New Position (4x4 sprite with eyes)
-    ################################################################
-    li   $t8, 0            # Row offset (0..3)
+################################################################
+# 6) Draw Player Sprite at New Position
+################################################################
+li   $t8, 0
 draw_loop_rows:
     la   $t7, current_player_row
-    lw   $t5, 0($t7)       # Base row for player
+    lw   $t5, 0($t7)
     la   $t7, current_player_col
-    lw   $t6, 0($t7)       # Base col for player
-    li   $t9, 0            # Column offset (0..3)
+    lw   $t6, 0($t7)
+    li   $t9, 0
 draw_loop_cols:
-    add  $t2, $t5, $t8     # current_row = base_row + row offset
-    add  $t1, $t6, $t9     # current_col = base_col + col offset
-    mul  $t2, $t2, 512     # row offset in bytes
-    mul  $t1, $t1, 4       # col offset in bytes
-    add  $t0, $s0, $t2     # pixel address = base + row offset
-    add  $t0, $t0, $t1     # + column offset
+    add  $t2, $t5, $t8
+    add  $t1, $t6, $t9
+    mul  $t2, $t2, 512
+    mul  $t1, $t1, 4
+    add  $t0, $s0, $t2
+    add  $t0, $t0, $t1
 
-    # Determine pixel color.
-    # For all rows except row 1, draw red ($s2).
-    # For row 1, choose eye color based on facing.
+    # Draw eyes if on row 1, else draw red
     li   $t3, 1
-    bne  $t8, $t3, player_set_red   # if row offset != 1, set red
+    bne  $t8, $t3, player_set_red
+    lw   $t3, player_facing
+    beq  $t3, $zero, right_facing
 
-    # Now in row 1: load player_facing.
-    lw   $t3, player_facing         # $t3 = 0 for right, 1 for left
-    beq  $t3, $zero, right_facing    # if facing == 0, branch to right_facing
-
-    # Left facing branch:
+    # Left-facing eyes
 left_facing:
     li   $t4, 0
-    beq  $t9, $t4, player_set_black  # if col offset == 0, set black
+    beq  $t9, $t4, player_set_black
     li   $t4, 2
-    beq  $t9, $t4, player_set_black  # if col offset == 2, set black
+    beq  $t9, $t4, player_set_black
     j    player_set_red
 
+# Right-facing eyes
 right_facing:
     li   $t4, 1
-    beq  $t9, $t4, player_set_black  # if col offset == 1, set black
+    beq  $t9, $t4, player_set_black
     li   $t4, 3
-    beq  $t9, $t4, player_set_black  # if col offset == 3, set black
+    beq  $t9, $t4, player_set_black
     j    player_set_red
 
 player_set_black:
-    lw   $t7, black       # load black color
+    lw   $t7, black
     j    store_pixel
 player_set_red:
-    move $t7, $s2         # set red color
+    move $t7, $s2
 store_pixel:
-    sw   $t7, 0($t0)      # write chosen color
+    sw   $t7, 0($t0)
 
     addi $t9, $t9, 1
     blt  $t9, 4, draw_loop_cols
     addi $t8, $t8, 1
     blt  $t8, 4, draw_loop_rows
 
-    ################################################################
-    # 7) Update Previous Player Position
-    ################################################################
-    la   $t7, current_player_row
-    lw   $t4, 0($t7)
-    move $s6, $t4
-    la   $t7, current_player_col
-    lw   $t4, 0($t7)
-    move $s7, $t4
-  
-    ################################################################
-    # 7.1) Restore Old Enemy Background (4×4 region) from enemy_bg_buffer
-    ################################################################
-    la   $t0, enemy_bg_buffer    # pointer to enemy bg buffer
-    li   $t1, 0                  # row offset index (0..3)
+################################################################
+# 7) Update Previous Player Position
+################################################################
+la   $t7, current_player_row
+lw   $t4, 0($t7)
+move $s6, $t4
+la   $t7, current_player_col
+lw   $t4, 0($t7)
+move $s7, $t4
+
+################################################################
+# 7.1) Restore Old Enemy Background (from enemy_bg_buffer)
+################################################################
+la   $t0, enemy_bg_buffer
+li   $t1, 0
 enemy_restore_bg_loop_rows:
-    li   $t2, 0                  # column offset index (0..3)
+    li   $t2, 0
 enemy_restore_bg_loop_cols:
-    # Compute current enemy pixel address:
-    la   $t3, enemy_row         # load enemy_row address
-    lw   $t4, 0($t3)            # enemy's base row
-    add  $t4, $t4, $t1          # current row = enemy_row + row offset
-    la   $t5, enemy_col         # load enemy_col address
-    lw   $t6, 0($t5)            # enemy's base col
-    add  $t6, $t6, $t2          # current col = enemy_col + col offset
-    mul  $t4, $t4, 512          # row offset (bytes)
-    mul  $t6, $t6, 4            # col offset (bytes)
-    add  $t7, $s0, $t4          # base address + row offset
-    add  $t7, $t7, $t6          # final pixel address for enemy region
-    lw   $t8, 0($t0)            # get stored pixel from enemy_bg_buffer
-    sw   $t8, 0($t7)            # restore that pixel into the framebuffer
-    addi $t0, $t0, 4            # advance enemy_bg_buffer pointer
+    la   $t3, enemy_row
+    lw   $t4, 0($t3)
+    add  $t4, $t4, $t1
+    la   $t5, enemy_col
+    lw   $t6, 0($t5)
+    add  $t6, $t6, $t2
+    mul  $t4, $t4, 512
+    mul  $t6, $t6, 4
+    add  $t7, $s0, $t4
+    add  $t7, $t7, $t6
+    lw   $t8, 0($t0)
+    sw   $t8, 0($t7)
+    addi $t0, $t0, 4
     addi $t2, $t2, 1
     blt  $t2, 4, enemy_restore_bg_loop_cols
-    li   $t2, 0                 # reset col offset for next row
+    li   $t2, 0
     addi $t1, $t1, 1
     blt  $t1, 4, enemy_restore_bg_loop_rows
 
-    ################################################################
-    # 7.2) Update Enemy Position (Horizontal move)
-    ################################################################
-    la   $t0, enemy_col         # load enemy_col address
-    lw   $t1, 0($t0)            # get current enemy col
-    la   $t2, enemy_velocity    # load enemy_velocity address
-    lw   $t3, 0($t2)            # get enemy horizontal speed
-    add  $t1, $t1, $t3          # new enemy col = old + velocity
-    li   $t4, 124              # right boundary (for 4×4 sprite)
-    ble  $t1, $t4, enemy_update_done
-    li   $t1, 0                # if beyond boundary, wrap to left
+################################################################
+# 7.2) Update Enemy Position (Horizontal movement & wrap)
+################################################################
+la   $t0, enemy_col
+lw   $t1, 0($t0)
+la   $t2, enemy_velocity
+lw   $t3, 0($t2)
+add  $t1, $t1, $t3
+li   $t4, 124
+ble  $t1, $t4, enemy_update_done
+li   $t1, 0
 enemy_update_done:
-    sw   $t1, 0($t0)           # store updated enemy col
+sw   $t1, 0($t0)
 
-    ################################################################
-    # 7.3) Save New Enemy Background into enemy_bg_buffer
-    # (Capture the 4×4 area at the enemy's new position)
-    ################################################################
-    la   $t0, enemy_bg_buffer   # reset pointer for enemy bg buffer
-    li   $t1, 0                 # row offset index (0..3)
+################################################################
+# 7.3) Save New Enemy Background (4x4) into enemy_bg_buffer
+################################################################
+la   $t0, enemy_bg_buffer
+li   $t1, 0
 enemy_save_bg_loop_rows:
-    li   $t2, 0                 # column offset index (0..3)
+    li   $t2, 0
 enemy_save_bg_loop_cols:
-    la   $t3, enemy_row         # load enemy_row address
-    lw   $t4, 0($t3)            # enemy's base row
-    add  $t4, $t4, $t1          # current row = enemy_row + row offset
-    la   $t5, enemy_col         # load enemy_col address
-    lw   $t6, 0($t5)            # enemy's base col
-    add  $t6, $t6, $t2          # current col = enemy_col + col offset
-    mul  $t4, $t4, 512          # row offset (bytes)
-    mul  $t6, $t6, 4            # col offset (bytes)
-    add  $t7, $s0, $t4          # base address + row offset
-    add  $t7, $t7, $t6          # final pixel address in framebuffer
-    lw   $t8, 0($t7)            # read current pixel from framebuffer
-    sw   $t8, 0($t0)            # save pixel into enemy_bg_buffer
-    addi $t0, $t0, 4            # advance enemy_bg_buffer pointer
+    la   $t3, enemy_row
+    lw   $t4, 0($t3)
+    add  $t4, $t4, $t1
+    la   $t5, enemy_col
+    lw   $t6, 0($t5)
+    add  $t6, $t6, $t2
+    mul  $t4, $t4, 512
+    mul  $t6, $t6, 4
+    add  $t7, $s0, $t4
+    add  $t7, $t7, $t6
+    lw   $t8, 0($t7)
+    sw   $t8, 0($t0)
+    addi $t0, $t0, 4
     addi $t2, $t2, 1
     blt  $t2, 4, enemy_save_bg_loop_cols
     addi $t1, $t1, 1
     blt  $t1, 4, enemy_save_bg_loop_rows
+
 
     ################################################################
     # 7.4) Draw Enemy Sprite (4×4 green block with black eyes)
@@ -1348,7 +1381,7 @@ enemy2_damage_active:
     beq  $t9, $t0, enemy_collision_reset
     j    continue_game
 
-        ################################################################
+################################################################
     # Check Enemy3 Collision
     ################################################################
 check_enemy3_collision:
@@ -1407,13 +1440,13 @@ enemy3_damage_active:
     j    continue_game
 
 ################################################################
-# Now do the Coin Collision (Updated for 6×7 coin)
+# Coin 1 Collision (6×7 coin)
 ################################################################
 check_coin_collision:
-    # (1) Skip if coin already collected
+    # (1) Skip if coin1 already collected
     la   $t9, coin_collected
     lw   $t8, 0($t9)
-    bnez $t8, check_coin2_collision    # Instead of jumping to no_collision, go check coin2
+    bnez $t8, check_coin2_collision    # go check coin2 if coin1 is already collected
 
     # (2) Load player bounding box (assumed 3×3)
     la   $t0, player_row
@@ -1421,22 +1454,19 @@ check_coin_collision:
     la   $t2, player_col
     lw   $t3, 0($t2)       # player's left column
 
-    # (3) Load coin bounding box (6×7 coin)
+    # (3) Load coin1 bounding box (6×7 coin)
     la   $t4, coin_row
-    lw   $t5, 0($t4)       # coin's top row
+    lw   $t5, 0($t4)       # coin1's top row
     la   $t6, coin_col
-    lw   $t7, 0($t6)       # coin's left column
+    lw   $t7, 0($t6)       # coin1's left column
 
     # (4) AABB test for coin1
     addi $t8, $t1, 3
     blt  $t8, $t5, check_coin2_collision
-
     addi $t8, $t5, 7
     bgt  $t1, $t8, check_coin2_collision
-
     addi $t8, $t3, 3
     blt  $t8, $t7, check_coin2_collision
-
     addi $t8, $t7, 6
     bgt  $t3, $t8, check_coin2_collision
 
@@ -1445,29 +1475,136 @@ check_coin_collision:
     lw   $t8, 0($t9)
     addi $t8, $t8, 1
     sw   $t8, 0($t9)
-
     li   $t0, 4
-    beq  $t8, $t0, game_over
-
+    beq  $t8, $t0, win_screen
     la   $t9, coin_collected
     li   $t8, 1
     sw   $t8, 0($t9)
-
-    # Draw a new coin at row 5, col 6 (instead of erasing it)
-    li   $a0, 5      # new coin's top row
-    li   $a1, 6      # new coin's left column
+    # Draw new coin1 at new position (row 5, col 6)
+    li   $a0, 5
+    li   $a1, 6
     jal  draw_gold_coin_new
-
     j    continue_game
 
 ################################################################
-# Now do the Coin 2 Collision (Updated for 6×7 coin)
+# Coin 2 Collision (6×7 coin)
 ################################################################
 check_coin2_collision:
     # (1) Skip if coin2 already collected
     la   $t9, coin2_collected
     lw   $t8, 0($t9)
-    bnez $t8, no_collision_coin2
+    bnez $t8, check_coin3_collision   # branch to coin3 if already collected
+
+    # (2) Load player bounding box (assumed 3×3)
+    la   $t0, player_row
+    lw   $t1, 0($t0)
+    la   $t2, player_col
+    lw   $t3, 0($t2)
+
+    # (3) Load coin2 bounding box (6×7 coin)
+    la   $t4, coin2_row
+    lw   $t5, 0($t4)
+    la   $t6, coin2_col
+    lw   $t7, 0($t6)
+
+    # (4) AABB test for coin2
+    addi $t8, $t1, 3
+    blt  $t8, $t5, check_coin3_collision
+    addi $t8, $t5, 7
+    bgt  $t1, $t8, check_coin3_collision
+    addi $t8, $t3, 3
+    blt  $t8, $t7, check_coin3_collision
+    addi $t8, $t7, 6
+    bgt  $t3, $t8, check_coin3_collision
+
+    # --- Collision with coin2 detected ---
+    la   $t9, coin_counter
+    lw   $t8, 0($t9)
+    addi $t8, $t8, 1
+    sw   $t8, 0($t9)
+    li   $t0, 4
+    beq  $t8, $t0, win_screen
+    la   $t9, coin2_collected
+    li   $t8, 1
+    sw   $t8, 0($t9)
+    # Draw new coin2 at new position (row 5, col 14)
+    li   $a0, 5
+    li   $a1, 14
+    jal  draw_gold_coin_new
+    # Update coin2 collision box to match new position.
+    li   $t0, 5
+    la   $t1, coin2_row
+    sw   $t0, 0($t1)
+    li   $t0, 15
+    la   $t1, coin2_col
+    sw   $t0, 0($t1)
+    j    continue_game
+
+################################################################
+# Coin 3 Collision (6×7 coin)
+################################################################
+check_coin3_collision:
+    # (1) Skip if coin3 already collected
+    la   $t9, coin3_collected
+    lw   $t8, 0($t9)
+    bnez $t8, check_coin4_collision
+
+
+    # (2) Load player bounding box (assumed 3×3)
+    la   $t0, player_row
+    lw   $t1, 0($t0)
+    la   $t2, player_col
+    lw   $t3, 0($t2)
+
+    # (3) Load coin3 bounding box (6×7 coin)
+    la   $t4, coin3_row
+    lw   $t5, 0($t4)
+    la   $t6, coin3_col
+    lw   $t7, 0($t6)
+
+    # (4) AABB test for coin3
+    addi $t8, $t1, 3
+    blt  $t8, $t5, check_coin4_collision
+    addi $t8, $t5, 7
+    bgt  $t1, $t8, check_coin4_collision
+    addi $t8, $t3, 3
+    blt  $t8, $t7, check_coin4_collision
+    addi $t8, $t7, 6
+    bgt  $t3, $t8, check_coin4_collision
+
+
+    # --- Collision with coin3 detected ---
+    la   $t9, coin_counter
+    lw   $t8, 0($t9)
+    addi $t8, $t8, 1       # Increment coin counter
+    sw   $t8, 0($t9)
+    li   $t0, 4           # If coin_counter reaches 4, go to game_over
+    beq  $t8, $t0, win_screen
+    la   $t9, coin3_collected
+    li   $t8, 1           # Mark coin3 as collected
+    sw   $t8, 0($t9)
+    # Draw new coin3 at new position (row 5, col 25)
+    li   $a0, 5
+    li   $a1, 22
+    jal  draw_gold_coin_new
+    # Update coin3 collision box to match the new coin position.
+    li   $t0, 5
+    la   $t1, coin3_row
+    sw   $t0, 0($t1)
+    li   $t0, 25
+    la   $t1, coin3_col
+    sw   $t0, 0($t1)
+    j    continue_game
+
+
+################################################################
+# Coin 4 Collision (6×7 coin)
+################################################################
+check_coin4_collision:
+    # (1) Skip if coin4 already collected
+    la   $t9, coin4_collected
+    lw   $t8, 0($t9)
+    bnez $t8, no_collision
 
     # (2) Load player bounding box (assumed 3×3)
     la   $t0, player_row
@@ -1475,55 +1612,48 @@ check_coin2_collision:
     la   $t2, player_col
     lw   $t3, 0($t2)       # player's left column
 
-    # (3) Load coin2 bounding box (6×7 coin)
-    la   $t4, coin2_row
-    lw   $t5, 0($t4)       # coin2's top row
-    la   $t6, coin2_col
-    lw   $t7, 0($t6)       # coin2's left column
+    # (3) Load coin4 bounding box (6×7 coin)
+    la   $t4, coin4_row
+    lw   $t5, 0($t4)       # coin4's top row
+    la   $t6, coin4_col
+    lw   $t7, 0($t6)       # coin4's left column
 
-    # (4) AABB test for coin2
+    # (4) AABB test for coin4
     addi $t8, $t1, 3
-    blt  $t8, $t5, no_collision_coin2
-
+    blt  $t8, $t5, no_collision   # if player's bottom < coin4's top, no collision
     addi $t8, $t5, 7
-    bgt  $t1, $t8, no_collision_coin2
-
+    bgt  $t1, $t8, no_collision   # if player's top > coin4's bottom, no collision
     addi $t8, $t3, 3
-    blt  $t8, $t7, no_collision_coin2
-
+    blt  $t8, $t7, no_collision   # if player's right < coin4's left, no collision
     addi $t8, $t7, 6
-    bgt  $t3, $t8, no_collision_coin2
+    bgt  $t3, $t8, no_collision   # if player's left > coin4's right, no collision
 
-    # --- Collision with coin2 detected ---
+    # --- Collision with coin4 detected ---
     la   $t9, coin_counter
     lw   $t8, 0($t9)
-    addi $t8, $t8, 1
+    addi $t8, $t8, 1           # Increment coin counter
     sw   $t8, 0($t9)
-
     li   $t0, 4
-    beq  $t8, $t0, game_over
-
-    la   $t9, coin2_collected
+    beq  $t8, $t0, win_screen   # If coin_counter reaches 4, game over
+    la   $t9, coin4_collected
     li   $t8, 1
-    sw   $t8, 0($t9)
+    sw   $t8, 0($t9)          # Mark coin4 as collected
 
-    # Draw a new coin2 at row 5, col 15 (instead of col 10)
-    li   $a0, 5       # new coin2's top row
-    li   $a1, 15      # new coin2's left column
+    # Draw new coin4 at new position (for example, row 5, col 30)
+    li   $a0, 5               # new coin4's top row
+    li   $a1, 30              # new coin4's left column
     jal  draw_gold_coin_new
 
-    # Update coin2 collision box to match the new coin position.
+    # Update coin4 collision box to match the new coin position.
     li   $t0, 5
-    la   $t1, coin2_row
+    la   $t1, coin4_row
     sw   $t0, 0($t1)
-    li   $t0, 15
-    la   $t1, coin2_col
+    li   $t0, 30
+    la   $t1, coin4_col
     sw   $t0, 0($t1)
 
     j    continue_game
 
-no_collision_coin2:
-    j    no_collision
 
 
     ################################################################
@@ -1552,14 +1682,219 @@ enemy_collision_reset:
     j    game_loop
 
 
-
-
-
 ################################################################
 # Label: continue_game (after processing a collision)
 ################################################################
 continue_game:
     j    game_loop
+
+################################################################
+# Label: win screen
+################################################################
+win_screen:
+        # Clear the screen to green.
+    li   $s0, BASE_ADDRESS
+
+    li   $t3, 0x0000FF00    # Green color
+    li   $t4, 0             # row counter
+win_clear_loop:
+    li   $t5, 0             # column counter
+win_clear_cols:
+    mul  $t6, $t4, 512      # row offset in bytes
+    mul  $t7, $t5, 4        # column offset in bytes
+    add  $t8, $s0, $t6      # add row offset to base address
+    add  $t8, $t8, $t7      # add column offset
+    sw   $t3, 0($t8)        # set pixel to green
+    addi $t5, $t5, 1
+    blt  $t5, 128, win_clear_cols
+    addi $t4, $t4, 1
+    blt  $t4, 64, win_clear_loop
+
+# ---- Draw W2 (row 25, col 35) in white ----
+li   $t0, 25        # Base row for W2 (vertical strokes start at row 25)
+li   $t1, 35        # Base col for W2 (shifted 10 columns lower from original)
+li   $t2, 0
+
+W2_left:
+    bge  $t2, 15, W2_left_done
+    add  $t3, $t0, $t2         # current row = base row (25) + offset
+    mul  $t4, $t3, 512         # compute row offset in bytes
+    mul  $t5, $t1, 4           # compute col offset in bytes
+    add  $t6, $s0, $t4         # BASE_ADDRESS + row offset
+    add  $t6, $t6, $t5         # add col offset
+    sw   $t9, 0($t6)          # draw white pixel
+    addi $t2, $t2, 1
+    j    W2_left
+W2_left_done:
+
+li   $t2, 0
+W2_right:
+    bge  $t2, 15, W2_right_done
+    add  $t3, $t0, $t2         # current row = base row (25) + offset
+    li   $t7, 42              # Right stroke at col = 35 + 7 = 42
+    mul  $t4, $t3, 512
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)
+    addi $t2, $t2, 1
+    j    W2_right
+W2_right_done:
+
+# ---- Diagonals: shift these 10 rows lower (rows 35 to 37) ----
+
+# W2 diagonal left-to-center (rows 35 to 37, starting at col 39)
+li   $t2, 0
+W2_diag_left:
+    bge  $t2, 3, W2_diag_left_done
+    addi $t3, $t2, 35         # row = 35 + offset (diagonal starts 10 rows lower than before)
+    addi $t4, $t2, 39         # col = 39 + offset
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j    W2_diag_left
+W2_diag_left_done:
+
+# W2 diagonal right-to-center (rows 35 to 37, starting at col 38)
+li   $t2, 0
+W2_diag_right:
+    bge  $t2, 3, W2_diag_right_done
+    addi $t3, $t2, 35         # row = 35 + offset
+    li   $t4, 38              # starting at col 38
+    sub  $t4, $t4, $t2        # col = 38 - offset
+    mul  $t5, $t3, 512
+    mul  $t6, $t4, 4
+    add  $t7, $s0, $t5
+    add  $t7, $t7, $t6
+    sw   $t9, 0($t7)
+    addi $t2, $t2, 1
+    j    W2_diag_right
+W2_diag_right_done:
+
+
+# ---- Draw I beside W2 ----
+# Base coordinates for I:
+li   $t0, 25       # Base row for I (same vertical alignment as W2)
+li   $t1, 55       # Base col for I (placed to the right of W2)
+
+# Draw top horizontal line of I (8 pixels wide) at row 25
+li   $t2, 0
+I_top:
+    bge  $t2, 8, I_top_done
+    add  $t3, $t1, $t2    # current col = base col + offset
+    mul  $t4, $t0, 512    # row offset (base row)
+    mul  $t5, $t3, 4      # col offset
+    add  $t6, $s0, $t4    # BASE_ADDRESS + row offset
+    add  $t6, $t6, $t5    # add col offset
+    sw   $t9, 0($t6)      # draw white pixel
+    addi $t2, $t2, 1
+    j    I_top
+I_top_done:
+
+# Draw vertical stroke of I (a single column) from row 26 to 39
+# We'll use the center column of I (base col + 3)
+addi $t7, $t1, 3         # center column for I
+li   $t2, 1              # start vertical stroke from offset 1
+I_vert:
+    bge  $t2, 15, I_vert_done  # Draw for 14 rows (row 25+1 to row 25+14)
+    add  $t3, $t0, $t2         # current row = base row + offset
+    mul  $t4, $t3, 512
+    mul  $t5, $t7, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)           # draw white pixel
+    addi $t2, $t2, 1
+    j    I_vert
+I_vert_done:
+
+# Draw bottom horizontal line of I (8 pixels wide) at row = base row + 15
+addi $t8, $t0, 15        # Compute bottom row (25 + 15 = 40)
+li   $t2, 0
+I_bot:
+    bge  $t2, 8, I_bot_done
+    add  $t3, $t1, $t2     # current col = base col + offset
+    mul  $t4, $t8, 512     # row offset for bottom row
+    mul  $t5, $t3, 4
+    add  $t6, $s0, $t4
+    add  $t6, $t6, $t5
+    sw   $t9, 0($t6)       # draw white pixel
+    addi $t2, $t2, 1
+    j    I_bot
+I_bot_done:
+
+# ---- Draw N beside I ----
+# Base coordinates for N:
+li   $t0, 25        # Base row for N (aligned with I)
+li   $t1, 75        # Base col for N (placed to the right of I)
+
+# ---- Draw left vertical stroke of N (16 pixels tall) ----
+li   $t2, 0
+N_left:
+    bge  $t2, 16, N_left_done
+    add  $t3, $t0, $t2      # current row = base row + offset
+    mul  $t4, $t3, 512      # compute row offset (bytes)
+    mul  $t5, $t1, 4        # left stroke at base col (65)
+    add  $t6, $s0, $t4      # BASE_ADDRESS + row offset
+    add  $t6, $t6, $t5      # add column offset
+    sw   $t9, 0($t6)        # draw white pixel
+    addi $t2, $t2, 1
+    j    N_left
+N_left_done:
+
+# ---- Draw right vertical stroke of N (16 pixels tall) ----
+li   $t2, 0
+N_right:
+    bge  $t2, 16, N_right_done
+    add  $t3, $t0, $t2      # current row = base row + offset
+    mul  $t4, $t3, 512      # compute row offset (bytes)
+    li   $t7, 82           # right stroke at col = base col + 7 (65 + 7 = 72)
+    mul  $t5, $t7, 4        # compute column offset (bytes)
+    add  $t6, $s0, $t4      # BASE_ADDRESS + row offset
+    add  $t6, $t6, $t5      # add column offset
+    sw   $t9, 0($t6)        # draw white pixel
+    addi $t2, $t2, 1
+    j    N_right
+N_right_done:
+
+# ---- Draw diagonal stroke of N (from top-left to bottom-right) ----
+li   $t2, 0
+# Load constant 15 into $s1 (assuming $s1 is available)
+li   $s1, 15
+N_diag:
+    bge  $t2, 16, N_diag_done
+    add  $t3, $t0, $t2      # current row = base row + offset
+
+    # Compute diagonal column = base col + (7 * row_offset) / 15
+    li   $t8, 7            # constant 7
+    mul  $t8, $t2, $t8     # $t8 = $t2 * 7
+    div  $t8, $s1          # divide by 15 (stored in $s1)
+    mflo $t8               # $t8 = ($t2 * 7) / 15
+    add  $t8, $t1, $t8     # diagonal col = base col for N + computed offset
+
+    # Compute pixel address for diagonal stroke:
+    mul  $t4, $t3, 512     # row offset (bytes)
+    mul  $t5, $t8, 4       # column offset (bytes)
+    add  $t6, $s0, $t4     # BASE_ADDRESS + row offset
+    add  $t6, $t6, $t5     # add column offset
+    sw   $t9, 0($t6)       # draw white pixel
+    addi $t2, $t2, 1
+    j    N_diag
+N_diag_done:
+
+        # Wait for a key press (screen stays until a key is pressed)
+win_wait_key:
+    li   $t0, 0xffff0000   # Keyboard MMIO base address
+wait_loop:
+    lw   $t1, 0($t0)       # Read key status
+    beq  $t1, $zero, wait_loop
+    j    wait_loop        # Remain in loop so game_loop is never re-entered
+
+
+
+
 
 ################################################################
 # Label: game_over (when hearts run out)
@@ -2956,6 +3291,53 @@ erase_heart_done:
     jr   $ra
 
 
+restart_game:
+    # Reset player state.
+    li   $t0, 60
+    sw   $t0, player_row
+    li   $t0, 2
+    sw   $t0, player_col
+    li   $t0, 0
+    sw   $t0, player_velocity
+    sw   $t0, is_jumping
+    li   $t0, 0        # Assuming 0 means default facing (right)
+    sw   $t0, player_facing
+
+    # Reset health.
+    li   $t0, 4
+    sw   $t0, hearts
+    li   $t0, 0
+    sw   $t0, enemy_collision_count
+    sw   $t0, damage_cooldown
+
+    # Reset coin data.
+    li   $t0, 0
+    sw   $t0, coin_counter
+    sw   $t0, coin_collected
+    sw   $t0, coin2_collected
+    sw   $t0, coin3_collected
+    sw   $t0, coin4_collected
+
+    # (Optional) Reset enemy positions.
+    li   $t0, 20
+    sw   $t0, enemy_row
+    li   $t0, 0
+    sw   $t0, enemy_col
+    li   $t0, 45
+    sw   $t0, enemy2_row
+    li   $t0, 0
+    sw   $t0, enemy2_col
+    li   $t0, 35
+    sw   $t0, enemy3_row
+    li   $t0, 0
+    sw   $t0, enemy3_col
+
+    # (Optional) Clear other game state or buffers as needed.
+    # You might also want to reset any score or timer variables here.
+
+    # Jump to the start of the main game loop.
+    j main_game_loop
+
 
 ########################################################################
 # START SCREEN SUBROUTINE
@@ -3701,9 +4083,13 @@ wait_for_key:
     lw   $t2, 4($t0)          # Read ASCII code of key pressed
     li   $t3, 115             # ASCII for 's'
     beq  $t2, $t3, start_game  # If 's' pressed, start the game
+    li   $t3, 114             # ASCII for 'r'
+    beq  $t2, $t3, restart_game  # If 'r' pressed, restart the game
     li   $t3, 113             # ASCII for 'q'
-    beq  $t2, $t3, restart_start_screen  # If 'q' pressed, restart the screen
+    beq  $t2, $t3, restart_start_screen  # Optionally keep this for a restart of the start screen
     j wait_for_key            # For any other key, keep waiting
+
+
 
 start_game:
     jr $ra                    # Return to caller (main continues to main_game_loop)
