@@ -252,6 +252,8 @@ end_star_row:
 
 stars_done:
 
+
+
 ################################################################
 # DRAW BLACK RECTANGLE (Top-right, rows 3–9, cols 95–126)
 ################################################################
@@ -824,7 +826,38 @@ save_bg_loop_cols:
     blt  $t8, 4, save_bg_loop_rows
 
 
+    # Draw a filled black rectangle covering rows 20 to 50 and columns 1 to 10.
+    # Each pixel is 4 bytes wide and each row is 512 bytes long.
+    # Assumes the framebuffer base address is in register $s0.
+    
+    li   $t0, 20                     # Initialize the row counter to 20 (starting row)
 
+rectangle_row_loop:
+    bgt  $t0, 63, rectangle_end      # If the current row > 50, we're done.
+    li   $t1, 1                      # Initialize the column counter to 1 (starting col)
+
+rectangle_col_loop:
+    bgt  $t1, 5, rectangle_next_row # If current col > 10, move to the next row.
+    
+    # Calculate the address for the pixel at (row, col):
+    #   offset = (row * 512) + (col * 4)
+    mul  $t2, $t0, 512               # $t2 = row offset (bytes)
+    mul  $t3, $t1, 4                 # $t3 = column offset (bytes)
+    add  $t4, $s0, $t2               # $t4 = BASE_ADDRESS + row offset
+    add  $t4, $t4, $t3               # $t4 = final pixel address
+    
+    li   $t5, 0x00080484
+    sw   $t5, 0($t4)                # Write the black color to the pixel
+    
+    addi $t1, $t1, 1                # Increment column counter
+    j    rectangle_col_loop         # Repeat for the next column
+
+rectangle_next_row:
+    addi $t0, $t0, 1                # Increment row counter (move to next row)
+    j    rectangle_row_loop         # Repeat the row loop
+
+rectangle_end:
+    # Finished drawing the rectangle.
 ###### Platform D Movement with Background Restoration and Oscillation ######
 # This code does the following:
 # 1. Restores the background from the previous frame (using a buffer).
