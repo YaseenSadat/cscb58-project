@@ -13,21 +13,31 @@
 # - Base Address for Display: 0x10008000 ($gp)
 #
 # Milestones reached:
-# - Milestone 1
+# - Milestone 1, 2, 3, and 4 
 #
-# Approved features for Milestone 3:
-# 1. Player now has a 4x4 sprite with eyes that differ based on facing:
-#    - Right facing (player_facing==0): eyes at (row1, col1) and (row1, col3)
-#    - Left facing  (player_facing==1): eyes at (row1, col0) and (row1, col2)
+# Approved features for Milestone 4: [Total 5 Marks] 
 #
-# 2. Floating Platform Collision (one-way):
-#    - Platform A (row 50, cols 10 to 30) now collides with the player only when
-#      falling from above. If the player's bottom (player_row+3) goes from above row 50
-#      to row 50 or below and the player horizontally overlaps the platform,
-#      the player is set to stand on the platform (player_row = 46).
+# 1. Moving objects [2 marks]: I have implemented three moving enemies that patrol left to right, and damage the player upon collision.
 #
-# Additional information:
-# - Step-by-step build in progress
+# 2. Moving platforms [2 marks]: I have added a horizontally oscillating platform that the player must land on in order to collect one 
+# 	of the coins.
+#
+# 3. Double jump [1 mark]: The player can perform a second jump while mid-air by pressing 'W'. This can only be done once to avoid making
+# 	 the mechanic overpowered.
+# 4. Animated sprites [2 marks]: (Bonus detail): The player’s eye shifts depending on the direction they are facing, adding a small visual 
+# 	feedback element.
+# # Link to video demonstration for final
+# submission:
+# - (insert YouTube / MyMedia / other URL here). Make sure we can view it!
+# # Are you OK with us sharing the video with people outside course staff? 
+# YES
+# Any additional information that the TA needs to know:
+# - The game uses the 'W', 'A', and 'D' keys for movement.
+# - Pressing 'R' or 'Q' will return the user to the start screen.
+# - However, to play again from the start screen, the program must be re-run.
+# - From the start screen, press 'S' to begin the game.
+# - There are 4 coins and 4 hearts scattered in the level.
+# - The player must collect all 4 coins and 4 hearts before getting hit by the enemies 4 times.
 #
 #####################################################################
 .eqv BASE_ADDRESS 0x10008000    # Framebuffer base address
@@ -826,6 +836,10 @@ save_bg_loop_cols:
     blt  $t8, 4, save_bg_loop_rows
 
 
+################################################################
+# Fixing empty map errors
+################################################################
+
     # Draw a filled black rectangle covering rows 20 to 50 and columns 1 to 10.
     # Each pixel is 4 bytes wide and each row is 512 bytes long.
     # Assumes the framebuffer base address is in register $s0.
@@ -857,7 +871,10 @@ rectangle_next_row:
     j    rectangle_row_loop         # Repeat the row loop
 
 rectangle_end:
+
     # Finished drawing the rectangle.
+    
+    
 ###### Platform D Movement with Background Restoration and Oscillation ######
 # This code does the following:
 # 1. Restores the background from the previous frame (using a buffer).
